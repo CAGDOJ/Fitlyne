@@ -195,17 +195,42 @@ function bind(){
   $("#photoInput").onchange=e=>previewFiles(e.target.files); $("#productForm").onsubmit=saveProduct; $("#cancelProduct").onclick=()=>{resetProductForm();showView("products")};
   $("#productSearch").oninput=renderProducts; $("#productNicheFilter").onchange=renderProducts; $("#stockForm").onsubmit=saveStock; $("#saleForm").onsubmit=saveSale; $("#expenseForm").onsubmit=saveExpense;
 }
-async function init(){
-  bind(); resetProductForm();
+async function init() {
+  bind();
+  resetProductForm();
+
   if ("serviceWorker" in navigator) {
-  navigator.serviceWorker
-    .getRegistrations()
-    .then((registrations) => {
-      registrations.forEach((registration) => {
-        registration.unregister();
-      });
-    });
+    try {
+      const registrations =
+        await navigator.serviceWorker.getRegistrations();
+
+      await Promise.all(
+        registrations.map((registration) =>
+          registration.unregister()
+        )
+      );
+
+      const cacheNames = await caches.keys();
+
+      await Promise.all(
+        cacheNames.map((name) => caches.delete(name))
+      );
+    } catch (error) {
+      console.warn(
+        "Não foi possível limpar o cache antigo:",
+        error
+      );
+    }
+  }
+
+  if (state.token) {
+    try {
+      await loadAll();
+      showView("dashboard");
+    } catch (error) {
+      logout();
+    }
+  }
 }
   if(state.token){try{await loadAll();showView("dashboard")}catch(e){logout()}}
-}
 document.addEventListener("DOMContentLoaded",init);
