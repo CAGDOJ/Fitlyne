@@ -1,8 +1,0 @@
-window.FITLYNE_CONFIG = {
-  API_URL: "https://script.google.com/macros/s/AKfycbwm3lrLcChgQXWk0B3Hdx9ri1MXEWnYavX2V3L9_fgFOXpJ4eCOUjRYYTNbg9ydmKCcOQ/exec",
-  CLOUDINARY_CLOUD_NAME: "v9gfcyqm",
-  CLOUDINARY_UPLOAD_PRESET: "fitlyne_upload",
-  CLOUDINARY_WATERMARK_PUBLIC_ID: "",
-  STORE_NAME: "FITLYNE",
-  STORE_SUBTITLE: "Moda Fitness & Makeup"
-};
