@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111111">
+  <title>Catálogo FITLYNE</title>
+  <link rel="stylesheet" href="catalog.css">
+</head>
+<body>
+  <header class="catalog-header">
+    <div>
+      <strong id="storeName">FITLYNE</strong>
+      <small id="storeSubtitle">Moda Fitness & Makeup</small>
+    </div>
+    <button id="openCart" class="cart-button" aria-label="Abrir carrinho">
+      Carrinho <span id="cartCount">0</span>
+    </button>
+  </header>
+
+  <main>
+    <section class="hero">
+      <span>Nova coleção</span>
+      <h1>Encontre seu estilo</h1>
+      <p>Moda fitness e maquiagem em um só lugar.</p>
+    </section>
+
+    <section class="tools">
+      <input id="searchInput" placeholder="Buscar no catálogo">
+      <div class="filters">
+        <button class="active" data-filter="">Todos</button>
+        <button data-filter="FITNESS">Fitness</button>
+        <button data-filter="MAKEUP">Makeup</button>
+      </div>
+    </section>
+
+    <section id="catalogGrid" class="catalog-grid"></section>
+  </main>
+
+  <dialog id="productDialog">
+    <button id="closeDialog" class="close">×</button>
+    <div id="dialogContent"></div>
+  </dialog>
+
+  <aside id="cartDrawer" class="cart-drawer" aria-hidden="true">
+    <div class="cart-head">
+      <div>
+        <strong>Seu carrinho</strong>
+        <small>Revise antes de pedir</small>
+      </div>
+      <button id="closeCart" class="cart-close" aria-label="Fechar carrinho">×</button>
+    </div>
+
+    <div id="cartItems" class="cart-items"></div>
+
+    <div class="cart-footer">
+      <div class="cart-summary">
+        <span>Total estimado</span>
+        <strong id="cartTotal">R$ 0,00</strong>
+      </div>
+      <label class="cart-note-label">
+        Observação do pedido
+        <textarea id="cartNote" rows="3" placeholder="Ex.: Prefiro retirada, confirmar cor antes..."></textarea>
+      </label>
+      <button id="checkoutWhatsApp" class="checkout-button">Solicitar pelo WhatsApp</button>
+    </div>
+  </aside>
+  <div id="cartBackdrop" class="cart-backdrop"></div>
+
+  <div id="toast"></div>
+  <script src="config.js"></script>
+  <script src="catalog.js"></script>
+</body>
+</html>

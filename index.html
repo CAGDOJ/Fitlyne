@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111111">
+  <title>FITLYNE</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="toast"></div>
+
+  <header class="topbar">
+    <button class="icon-btn" id="menuBtn" aria-label="Menu">☰</button>
+    <div>
+      <strong id="brandName">FITLYNE</strong>
+      <small id="brandSubtitle">Moda Fitness & Makeup</small>
+    </div>
+    <a class="catalog-link" href="catalog.html" target="_blank" rel="noopener">Ver catálogo</a>
+  </header>
+
+  <aside id="drawer" class="drawer">
+    <div class="drawer-head">
+      <strong>FITLYNE ADMIN</strong>
+      <button class="icon-btn" id="closeDrawer">✕</button>
+    </div>
+    <nav>
+      <button data-view="dashboard">⌂ Dashboard</button>
+      <button data-view="productForm">+ Novo produto</button>
+      <button data-view="products">□ Produtos</button>
+      <button data-view="stock">↻ Estoque</button>
+      <button data-view="sales">≡ Vendas</button>
+      <button data-view="clients">○ Clientes</button>
+      <button data-view="finance">$ Financeiro</button>
+      <button id="logoutBtn">↪ Sair</button>
+    </nav>
+  </aside>
+  <div id="backdrop" class="backdrop"></div>
+
+  <main id="app">
+    <section id="loginView" class="view active center-view">
+      <div class="card login-card">
+        <div class="logo-circle">F</div>
+        <h1>FITLYNE</h1>
+        <p>Gestão simples pelo celular</p>
+        <label>PIN administrativo
+          <input id="pinInput" type="password" inputmode="numeric" maxlength="8" placeholder="Digite o PIN">
+        </label>
+        <button class="primary" id="loginBtn">Entrar</button>
+        <a class="ghost catalog-public-btn" href="catalog.html">Abrir catálogo público</a>
+      </div>
+    </section>
+
+    <section id="dashboardView" class="view">
+      <div class="page-title"><div><h1>Dashboard</h1><p>Resumo da loja</p></div><button class="primary compact" data-view="productForm">+ Produto</button></div>
+      <div class="stats" id="stats"></div>
+      <div class="card">
+        <h2>Ações rápidas</h2>
+        <div class="quick-grid">
+          <button data-view="productForm">Cadastrar pelo celular</button>
+          <button data-view="sales">Nova venda</button>
+          <button data-view="stock">Ajustar estoque</button>
+          <button data-view="catalog">CAT Ver catálogo</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Estoque baixo</h2>
+        <div id="lowStockList" class="list"></div>
+      </div>
+    </section>
+
+    <section id="productFormView" class="view">
+      <div class="page-title"><div><h1 id="productFormTitle">Novo produto</h1><p>Cadastro rápido e fácil</p></div></div>
+      <form id="productForm" class="card form-grid">
+        <input type="hidden" id="productId">
+        <label>Nicho
+          <select id="niche" required>
+            <option value="FITNESS">Moda Fitness</option>
+            <option value="MAKEUP">Makeup</option>
+          </select>
+        </label>
+        <label>Nome do produto
+          <input id="productName" required placeholder="Ex.: Conjunto Canelado">
+        </label>
+        <label>Categoria
+          <input id="category" required placeholder="Ex.: Conjunto, Legging, Gloss">
+        </label>
+        <label>Marca
+          <input id="brand" value="FITLYNE">
+        </label>
+        <label>Cor ou tom
+          <input id="colorTone" placeholder="Ex.: Preto, Rosa, Bege 3">
+        </label>
+        <label>Preço de compra
+          <input id="purchasePrice" type="number" step="0.01" min="0" inputmode="decimal">
+        </label>
+        <label>Preço de venda
+          <input id="salePrice" type="number" step="0.01" min="0" inputmode="decimal" required>
+        </label>
+        <label>Estoque inicial
+          <input id="initialStock" type="number" min="0" inputmode="numeric" value="1">
+        </label>
+        <label>Estoque mínimo
+          <input id="minStock" type="number" min="0" inputmode="numeric" value="1">
+        </label>
+
+        <fieldset id="sizeFieldset">
+          <legend>Tamanho da vestimenta</legend>
+          <label class="radio"><input type="radio" name="sizeMode" value="UNICO" checked> Tamanho único</label>
+          <label class="radio"><input type="radio" name="sizeMode" value="SEPARADOS"> Tamanhos separados</label>
+          <label class="radio"><input type="radio" name="sizeMode" value="NA"> Não se aplica</label>
+          <div id="uniqueSizeBox" class="inline-fields">
+            <label>Veste do <input id="sizeFrom" type="number" value="36" inputmode="numeric"></label>
+            <label>até <input id="sizeTo" type="number" value="40" inputmode="numeric"></label>
+          </div>
+          <div id="separateSizesBox" class="hidden">
+            <label>Tamanhos e estoques</label>
+            <div class="size-chips" id="sizeChips"></div>
+            <button type="button" class="ghost compact" id="addCustomSize">+ Outro tamanho</button>
+          </div>
+        </fieldset>
+
+        <label class="full">Descrição
+          <textarea id="description" rows="4" placeholder="Tecido, modelagem, acabamento e detalhes"></textarea>
+        </label>
+
+        <div class="full">
+          <h3>Fotos</h3>
+          <p class="muted">Tire fotos agora ou escolha da galeria. A primeira será a capa.</p>
+          <label class="camera-button">
+            📷 Tirar ou escolher fotos
+            <input id="photoInput" type="file" accept="image/*" capture="environment" multiple hidden>
+          </label>
+          <div id="photoPreview" class="photo-grid"></div>
+        </div>
+
+        <label class="checkbox full"><input id="activeProduct" type="checkbox" checked> Publicar no catálogo</label>
+        <div class="form-actions full">
+          <button type="button" class="ghost" id="cancelProduct">Cancelar</button>
+          <button type="submit" class="primary" id="saveProductBtn">Salvar e publicar</button>
+        </div>
+      </form>
+    </section>
+
+    <section id="productsView" class="view">
+      <div class="page-title"><div><h1>Produtos</h1><p>Cadastre, edite e acompanhe o estoque</p></div><button class="primary compact" data-view="productForm">+ Novo</button></div>
+      <div class="filters card">
+        <input id="productSearch" placeholder="Pesquisar produto">
+        <select id="productNicheFilter">
+          <option value="">Todos</option>
+          <option value="FITNESS">Fitness</option>
+          <option value="MAKEUP">Makeup</option>
+        </select>
+      </div>
+      <div id="productList" class="product-admin-grid"></div>
+    </section>
+
+    <section id="stockView" class="view">
+      <div class="page-title"><div><h1>Estoque</h1><p>Entradas, saídas, perdas e devoluções</p></div></div>
+      <form id="stockForm" class="card form-grid">
+        <label>Produto<select id="stockProduct" required></select></label>
+        <label>Tipo
+          <select id="stockType">
+            <option value="ENTRADA">Entrada</option>
+            <option value="SAIDA">Saída</option>
+            <option value="PERDA">Perda</option>
+            <option value="DEVOLUCAO">Devolução</option>
+            <option value="AJUSTE">Ajuste absoluto</option>
+          </select>
+        </label>
+        <label>Quantidade<input id="stockQty" type="number" min="0" required inputmode="numeric"></label>
+        <label>Motivo<input id="stockReason" placeholder="Ex.: Compra do fornecedor"></label>
+        <button class="primary full">Registrar movimentação</button>
+      </form>
+      <div class="card"><h2>Movimentações recentes</h2><div id="movementList" class="list"></div></div>
+    </section>
+
+    <section id="salesView" class="view">
+      <div class="page-title"><div><h1>Vendas</h1><p>Registre a venda e dê baixa automática</p></div></div>
+      <form id="saleForm" class="card form-grid">
+        <label>Produto<select id="saleProduct" required></select></label>
+        <label>Quantidade<input id="saleQty" type="number" min="1" value="1" required inputmode="numeric"></label>
+        <label>Cliente<input id="saleClient" placeholder="Nome da cliente"></label>
+        <label>WhatsApp<input id="salePhone" inputmode="tel" placeholder="5591..."></label>
+        <label>Desconto<input id="saleDiscount" type="number" min="0" step="0.01" value="0" inputmode="decimal"></label>
+        <label>Pagamento
+          <select id="paymentMethod">
+            <option>PIX</option><option>DINHEIRO</option><option>CARTAO_CREDITO</option><option>CARTAO_DEBITO</option>
+          </select>
+        </label>
+        <button class="primary full">Finalizar venda</button>
+      </form>
+      <div class="card"><h2>Vendas recentes</h2><div id="salesList" class="list"></div></div>
+    </section>
+
+    <section id="clientsView" class="view">
+      <div class="page-title"><div><h1>Clientes</h1><p>Histórico e contato</p></div></div>
+      <div class="card"><div id="clientsList" class="list"></div></div>
+    </section>
+
+    <section id="financeView" class="view">
+      <div class="page-title"><div><h1>Financeiro</h1><p>Faturamento, despesas e resultado</p></div></div>
+      <div id="financeStats" class="stats"></div>
+      <form id="expenseForm" class="card form-grid">
+        <h2 class="full">Nova despesa</h2>
+        <label>Descrição<input id="expenseDescription" required></label>
+        <label>Categoria<input id="expenseCategory" placeholder="Fornecedor, embalagem..."></label>
+        <label>Valor<input id="expenseValue" type="number" min="0" step="0.01" required inputmode="decimal"></label>
+        <button class="primary full">Registrar despesa</button>
+      </form>
+      <div class="card"><h2>Despesas recentes</h2><div id="expensesList" class="list"></div></div>
+    </section>
+
+  </main>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
