@@ -197,7 +197,15 @@ function bind(){
 }
 async function init(){
   bind(); resetProductForm();
-  if("serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(()=>{});
+  if ("serviceWorker" in navigator) {
+  navigator.serviceWorker
+    .getRegistrations()
+    .then((registrations) => {
+      registrations.forEach((registration) => {
+        registration.unregister();
+      });
+    });
+}
   if(state.token){try{await loadAll();showView("dashboard")}catch(e){logout()}}
 }
 document.addEventListener("DOMContentLoaded",init);
