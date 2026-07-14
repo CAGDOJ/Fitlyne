@@ -1,12 +1,12 @@
 "use strict";
-const C = window.FITLYNE_CONFIG || {};
-const state = {token: sessionStorage.getItem("fitlyneToken") || "", products: [], photos: [], movements: [], sales: [], clients: [], expenses: [], config: {}, pendingFiles: [], editingId: null, view: "login", catalogFilter:""};
-const $ = s => document.querySelector(s);
-const $$ = s => [...document.querySelectorAll(s)];
-const money = v => Number(v || 0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
-const escapeHtml = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
-const toast = msg => { const t=$("#toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),2600); };
-const uid = prefix => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
+const C = Object.freeze({
+  API_URL: "https://script.google.com/macros/s/AKfycbwm3lrLcChgQXWk0B3Hdx9ri1MXEWnYavX2V3L9_fgFOXpJ4eCOUjRYYTNbg9ydmKCcOQ/exec",
+  CLOUDINARY_CLOUD_NAME: "v9gfcyqm",
+  CLOUDINARY_UPLOAD_PRESET: "fitlyne_upload",
+  CLOUDINARY_WATERMARK_PUBLIC_ID: "",
+  STORE_NAME: "FITLYNE",
+  STORE_SUBTITLE: "Moda Fitness & Makeup"
+});
 
 async function api(action, payload={}, auth=true){
   if(!C.API_URL || C.API_URL.includes("COLE_AQUI")) throw new Error("Configure API_URL em config.js");
