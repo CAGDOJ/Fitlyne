@@ -8,6 +8,43 @@ const C = Object.freeze({
   STORE_SUBTITLE: "Moda Fitness & Makeup"
 });
 
+const state = {
+  token: sessionStorage.getItem("fitlyneToken") || "",
+  products: [],
+  photos: [],
+  movements: [],
+  sales: [],
+  clients: [],
+  expenses: [],
+  config: {},
+  pendingFiles: [],
+  editingId: null,
+  view: "login"
+};
+
+const $ = (selector) => document.querySelector(selector);
+const $$ = (selector) => [...document.querySelectorAll(selector)];
+const money = (value) => Number(value || 0).toLocaleString("pt-BR", {
+  style: "currency",
+  currency: "BRL"
+});
+const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#039;"
+})[char]);
+const uid = (prefix) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+function toast(message) {
+  const element = $("#toast");
+  if (!element) return;
+  element.textContent = message;
+  element.classList.add("show");
+  clearTimeout(window.__fitlyneToast);
+  window.__fitlyneToast = setTimeout(() => element.classList.remove("show"), 2600);
+}
+
 async function api(action, payload={}, auth=true){
   if(!C.API_URL || C.API_URL.includes("COLE_AQUI")) throw new Error("Configure API_URL em config.js");
   const body = {action,payload,token: auth ? state.token : ""};
@@ -125,10 +162,20 @@ function previewFiles(files){
 }
 async function uploadImage(file, productId, index){
   if(!C.CLOUDINARY_CLOUD_NAME||!C.CLOUDINARY_UPLOAD_PRESET) throw new Error("Configure o Cloudinary em config.js");
-  const fd=new FormData(); fd.append("file",file); fd.append("upload_preset",C.CLOUDINARY_UPLOAD_PRESET); fd.append("folder",`fitlyne/produtos/${productId}`);
-  const res=await fetch(`https://api.cloudinary.com/v1_1/${C.CLOUDINARY_CLOUD_NAME}/image/upload`,{method:"POST",body:fd});
-  if(!res.ok) throw new Error("Falha ao enviar foto");
-  const d=await res.json();
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("upload_preset", C.CLOUDINARY_UPLOAD_PRESET);
+
+  const res = await fetch(
+    `https://api.cloudinary.com/v1_1/${C.CLOUDINARY_CLOUD_NAME}/image/upload`,
+    { method: "POST", body: fd }
+  );
+
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const detail = d?.error?.message || `HTTP ${res.status}`;
+    throw new Error(`Cloudinary: ${detail}`);
+  }
   const base=`https://res.cloudinary.com/${C.CLOUDINARY_CLOUD_NAME}/image/upload/`;
   const overlay=C.CLOUDINARY_WATERMARK_PUBLIC_ID?`l_${C.CLOUDINARY_WATERMARK_PUBLIC_ID.replaceAll("/","%3A")},o_35,g_south_east,w_0.28,fl_relative/`:"";
   const make=(w,h,crop="fill")=>`${base}f_auto,q_auto:good,c_${crop},w_${w},h_${h}/${overlay}${d.public_id}.${d.format}`;
