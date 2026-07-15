@@ -193,14 +193,3 @@ WHATSAPP = 5591999999999
 ```
 
 Use somente números, incluindo código do país e DDD.
-
-
-## CORREÇÃO FINAL 14/07/2026
-
-Esta versão corrige dois defeitos do pacote anterior:
-
-1. `app.js` estava sem as declarações de `state`, `$`, `$$`, `money`, `uid`, `escapeHtml` e `toast`.
-2. `catalog.html` carregava `app.js` em vez de `catalog.js`.
-
-Substitua todos os arquivos do repositório pelos desta pasta e envie para a branch `main`.
-Não copie apenas o `config.js`.

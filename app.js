@@ -24,6 +24,7 @@ const state = {
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
+const uid = (prefix) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const money = (value) => Number(value || 0).toLocaleString("pt-BR", {
   style: "currency",
   currency: "BRL"
@@ -35,22 +36,35 @@ const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => 
   '"': "&quot;",
   "'": "&#039;"
 })[char]);
-const uid = (prefix) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 function toast(message) {
   const element = $("#toast");
-  if (!element) return;
+  if (!element) {
+    console.log(message);
+    return;
+  }
   element.textContent = message;
   element.classList.add("show");
   clearTimeout(window.__fitlyneToast);
-  window.__fitlyneToast = setTimeout(() => element.classList.remove("show"), 2600);
+  window.__fitlyneToast = setTimeout(() => element.classList.remove("show"), 3000);
 }
 
 async function api(action, payload={}, auth=true){
   if(!C.API_URL || C.API_URL.includes("COLE_AQUI")) throw new Error("Configure API_URL em config.js");
   const body = {action,payload,token: auth ? state.token : ""};
-  const res = await fetch(C.API_URL,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(body)});
-  const data = await res.json();
-  if(!data.ok) throw new Error(data.error || "Erro na API");
+  const res = await fetch(C.API_URL, {
+    method: "POST",
+    headers: {"Content-Type": "text/plain;charset=utf-8"},
+    body: JSON.stringify(body),
+    redirect: "follow"
+  });
+  const raw = await res.text();
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`A API não retornou JSON (HTTP ${res.status}). Verifique a implantação do Apps Script.`);
+  }
+  if (!res.ok || !data.ok) throw new Error(data.error || `Erro na API (HTTP ${res.status})`);
   return data.data;
 }
 function showView(name){
@@ -162,19 +176,13 @@ function previewFiles(files){
 }
 async function uploadImage(file, productId, index){
   if(!C.CLOUDINARY_CLOUD_NAME||!C.CLOUDINARY_UPLOAD_PRESET) throw new Error("Configure o Cloudinary em config.js");
-  const fd = new FormData();
-  fd.append("file", file);
-  fd.append("upload_preset", C.CLOUDINARY_UPLOAD_PRESET);
-
-  const res = await fetch(
-    `https://api.cloudinary.com/v1_1/${C.CLOUDINARY_CLOUD_NAME}/image/upload`,
-    { method: "POST", body: fd }
-  );
-
-  const d = await res.json().catch(() => ({}));
+  const fd=new FormData(); fd.append("file",file); fd.append("upload_preset",C.CLOUDINARY_UPLOAD_PRESET); fd.append("folder",`fitlyne/produtos/${productId}`);
+  const res=await fetch(`https://api.cloudinary.com/v1_1/${C.CLOUDINARY_CLOUD_NAME}/image/upload`,{method:"POST",body:fd});
+  const raw = await res.text();
+  let d;
+  try { d = JSON.parse(raw); } catch (error) { d = {}; }
   if (!res.ok) {
-    const detail = d?.error?.message || `HTTP ${res.status}`;
-    throw new Error(`Cloudinary: ${detail}`);
+    throw new Error(d?.error?.message ? `Cloudinary: ${d.error.message}` : `Falha ao enviar foto (HTTP ${res.status})`);
   }
   const base=`https://res.cloudinary.com/${C.CLOUDINARY_CLOUD_NAME}/image/upload/`;
   const overlay=C.CLOUDINARY_WATERMARK_PUBLIC_ID?`l_${C.CLOUDINARY_WATERMARK_PUBLIC_ID.replaceAll("/","%3A")},o_35,g_south_east,w_0.28,fl_relative/`:"";
@@ -279,5 +287,4 @@ async function init() {
     }
   }
 }
-  if(state.token){try{await loadAll();showView("dashboard")}catch(e){logout()}}
-document.addEventListener("DOMContentLoaded",init);
+document.addEventListener("DOMContentLoaded", init);

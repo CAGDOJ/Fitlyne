@@ -1,0 +1,10 @@
+FITLYNE - CORREÇÃO REAL
+
+Foram corrigidos os erros que impediam TODO o JavaScript de iniciar:
+1. app.js não possuía state, $, $$, money, uid, escapeHtml e toast.
+2. havia uma linha com await fora de função, causando SyntaxError.
+3. catalog.html carregava app.js em vez de catalog.js.
+
+SUBSTITUA TODOS OS ARQUIVOS DO REPOSITÓRIO PELOS DESTA PASTA.
+Depois faça commit e push.
+Abra: https://cagdoj.github.io/Fitlyne/?v=20260715-fix-real
