@@ -177,14 +177,14 @@ function previewFiles(files){
 async function uploadImage(file, productId, index){
   if(!C.CLOUDINARY_CLOUD_NAME||!C.CLOUDINARY_UPLOAD_PRESET) throw new Error("Configure o Cloudinary em config.js");
   const fd=new FormData(); fd.append("file",file); fd.append("upload_preset",C.CLOUDINARY_UPLOAD_PRESET); fd.append("folder",`fitlyne/produtos/${productId}`);
-  const res=await fetch(`https://api.cloudinary.com/v1_1/${C.CLOUDINARY_CLOUD_NAME}/image/upload`,{method:"POST",body:fd});
+  const res=await fetch(`https://api.cloudinary.com/v1_1/${C.v9gfcyqm}/image/upload`,{method:"POST",body:fd});
   const raw = await res.text();
   let d;
   try { d = JSON.parse(raw); } catch (error) { d = {}; }
   if (!res.ok) {
     throw new Error(d?.error?.message ? `Cloudinary: ${d.error.message}` : `Falha ao enviar foto (HTTP ${res.status})`);
   }
-  const base=`https://res.cloudinary.com/${C.CLOUDINARY_CLOUD_NAME}/image/upload/`;
+  const base=`https://res.cloudinary.com/${C.v9gfcyqm}/image/upload/`;
   const overlay=C.CLOUDINARY_WATERMARK_PUBLIC_ID?`l_${C.CLOUDINARY_WATERMARK_PUBLIC_ID.replaceAll("/","%3A")},o_35,g_south_east,w_0.28,fl_relative/`:"";
   const make=(w,h,crop="fill")=>`${base}f_auto,q_auto:good,c_${crop},w_${w},h_${h}/${overlay}${d.public_id}.${d.format}`;
   return {
