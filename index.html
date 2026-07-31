@@ -1,4 +1,3 @@
-<!-- FORCAR PUBLICACAO V7 -->
 <!doctype html>
 <html lang="pt-BR">
 <head>
@@ -6,9 +5,10 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#111111">
   <title>FITLYNE</title>
+  <link rel="icon" href="./favicon.ico" sizes="any">
   <link rel="icon" type="image/svg+xml" href="./assets/icon.svg">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="styles.css?v=20260730-2355-v7">
+  <link rel="stylesheet" href="styles.css?v=20260731-0045-v11">
 </head>
 <body class="guest">
   <div id="toast"></div>
@@ -31,10 +31,12 @@
       <button data-view="dashboard">⌂ Dashboard</button>
       <button data-view="productForm">+ Novo produto</button>
       <button data-view="products">□ Produtos</button>
+      <a class="drawer-link" href="./catalog.html" target="_blank" rel="noopener">▣ Ver catálogo público</a>
       <button data-view="stock">↻ Estoque</button>
       <button data-view="sales">≡ Vendas</button>
       <button data-view="clients">○ Clientes</button>
       <button data-view="finance">$ Financeiro</button>
+      <button data-view="settings">⚙ Configurações</button>
       <button id="logoutBtn">↪ Sair</button>
     </nav>
   </aside>
@@ -55,6 +57,10 @@
 
     <section id="dashboardView" class="view">
       <div class="page-title"><div><h1>Dashboard</h1><p>Resumo da loja</p></div><button class="primary compact" data-view="productForm">+ Produto</button></div>
+      <div id="whatsappWarning" class="status-banner warning hidden">
+        <div><strong>WhatsApp da loja não configurado</strong><small>Cadastre o número para o botão “Solicitar pelo WhatsApp” funcionar.</small></div>
+        <button type="button" class="ghost compact" data-view="settings">Configurar</button>
+      </div>
       <div class="stats" id="stats"></div>
       <div class="card">
         <h2>Ações rápidas</h2>
@@ -62,6 +68,8 @@
           <button data-view="productForm">Cadastrar pelo celular</button>
           <button data-view="sales">Nova venda</button>
           <button data-view="stock">Ajustar estoque</button>
+          <a class="quick-action" href="./catalog.html" target="_blank" rel="noopener">Ver catálogo público</a>
+          <button data-view="settings">Configurar WhatsApp</button>
         </div>
       </div>
       <div class="card">
@@ -104,6 +112,15 @@
         <label>Estoque mínimo
           <input id="minStock" type="number" min="0" inputmode="numeric" value="1">
         </label>
+        <label>Status exibido no catálogo
+          <select id="catalogStatus">
+            <option value="AUTOMATICO">Automático pelo estoque</option>
+            <option value="DISPONIVEL">Disponível</option>
+            <option value="ESGOTADO">Esgotado</option>
+            <option value="REPOSICAO">Reposição em breve</option>
+          </select>
+          <small class="field-help">O cliente verá somente este aviso, nunca a quantidade em estoque.</small>
+        </label>
 
         <fieldset id="sizeFieldset">
           <legend>Tamanho da vestimenta</legend>
@@ -128,14 +145,21 @@
         <div class="full">
           <h3>Fotos</h3>
           <p class="muted">Tire fotos agora ou escolha da galeria. A primeira será a capa.</p>
-          <label class="camera-button">
-            📷 Tirar ou escolher fotos
-            <input id="photoInput" type="file" accept="image/*" capture="environment" multiple hidden>
-          </label>
+          <div class="photo-source-grid">
+            <label class="photo-source-button">
+              🖼️ Escolher da galeria
+              <input id="galleryInput" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple hidden>
+            </label>
+            <label class="photo-source-button">
+              📷 Tirar foto
+              <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
+            </label>
+          </div>
+          <p class="photo-help">No celular, use <b>Escolher da galeria</b> para carregar fotos já salvas.</p>
           <div id="photoPreview" class="photo-grid"></div>
         </div>
 
-        <label class="checkbox full"><input id="activeProduct" type="checkbox" checked> Publicar no catálogo</label>
+        <label class="checkbox full"><input id="activeProduct" type="checkbox" checked> Exibir produto no catálogo</label>
         <div class="form-actions full">
           <button type="button" class="ghost" id="cancelProduct">Cancelar</button>
           <button type="submit" class="primary" id="saveProductBtn">Salvar e publicar</button>
@@ -212,9 +236,29 @@
       <div class="card"><h2>Despesas recentes</h2><div id="expensesList" class="list"></div></div>
     </section>
 
+    <section id="settingsView" class="view">
+      <div class="page-title"><div><h1>Configurações</h1><p>Dados exibidos no catálogo e contato dos pedidos</p></div></div>
+      <form id="settingsForm" class="card form-grid">
+        <label class="full">WhatsApp da loja
+          <input id="storeWhatsapp" inputmode="tel" autocomplete="tel" placeholder="Ex.: 5591991234567" required>
+          <small class="field-help">Digite DDI + DDD + número. Para Belém, exemplo: 5591...</small>
+        </label>
+        <label>Nome da loja
+          <input id="storeNameInput" maxlength="60" placeholder="FITLYNE">
+        </label>
+        <label>Subtítulo
+          <input id="storeSubtitleInput" maxlength="100" placeholder="Moda Fitness & Makeup">
+        </label>
+        <div class="form-actions full">
+          <button type="button" class="ghost" id="testWhatsappBtn">Testar WhatsApp</button>
+          <button type="submit" class="primary" id="saveSettingsBtn">Salvar configurações</button>
+        </div>
+      </form>
+    </section>
+
   </main>
-  <script src="./fitlyne-config-v7.js?v=20260730-2355"></script>
-  <script src="./app-v7.js?v=20260730-2355"></script>
+  <script src="./fitlyne-config-v11.js?v=20260731-0045"></script>
+  <script src="./app-v11.js?v=20260731-0045"></script>
 </body>
 </html>
 

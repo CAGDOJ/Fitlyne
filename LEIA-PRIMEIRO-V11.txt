@@ -1,0 +1,59 @@
+FITLYNE V11 — CATÁLOGO, STATUS, WHATSAPP E VELOCIDADE
+
+ALTERAÇÕES
+1. A quantidade disponível em estoque não aparece mais para o cliente.
+   - A API pública também não envia ESTOQUE_ATUAL nem PRECO_COMPRA.
+2. Novo controle de status do catálogo:
+   - Automático pelo estoque;
+   - Disponível;
+   - Esgotado;
+   - Reposição em breve.
+3. O status pode ser alterado:
+   - ao cadastrar/editar o produto;
+   - rapidamente no cartão do produto, na tela Produtos.
+4. Produtos esgotados ou em reposição continuam aparecendo no catálogo,
+   mas o botão de adicionar fica bloqueado.
+5. Link do catálogo público dentro da área autenticada:
+   - menu administrativo;
+   - Ações rápidas do Dashboard.
+6. No celular existem dois botões:
+   - Escolher da galeria;
+   - Tirar foto.
+7. WhatsApp corrigido:
+   - configuração dentro do painel;
+   - aceita número brasileiro com ou sem 55;
+   - abertura mais confiável no celular e no computador.
+8. Catálogo mais rápido:
+   - mostra uma cópia local imediatamente;
+   - atualiza em segundo plano;
+   - cache rápido de 60 segundos no Apps Script;
+   - imagens novas menores e com carregamento progressivo;
+   - até duas fotos são enviadas ao mesmo tempo.
+9. Favicon incluído em favicon.ico e assets/icon.svg.
+
+ATUALIZAÇÃO OBRIGATÓRIA DO GOOGLE APPS SCRIPT
+1. Abra o projeto do Apps Script vinculado à planilha.
+2. Apague o Code.gs antigo.
+3. Cole o arquivo google-apps-script/Code.gs desta pasta.
+4. Salve.
+5. Execute a função setupSystem uma vez e autorize.
+   Ela adicionará automaticamente a coluna STATUS_CATALOGO sem apagar dados.
+6. Vá em Implantar > Gerenciar implantações > Editar.
+7. Escolha Nova versão e clique em Implantar.
+
+PUBLICAÇÃO NO GITHUB
+1. Envie TODOS os arquivos desta pasta Fitlyne para a raiz do repositório.
+2. Substitua os arquivos antigos.
+3. Não envie a pasta Fitlyne inteira como subpasta: index.html deve ficar na raiz.
+4. Aguarde Actions > pages-build-deployment ficar verde.
+
+TESTE NO CONSOLE
+console.table({
+  versao: window.FITLYNE_CONFIG?.BUILD,
+  api: window.FITLYNE_CONFIG?.API_URL,
+  appV11: [...document.scripts].some(s => s.src.includes("app-v11.js"))
+});
+
+RESULTADO ESPERADO
+versao: 2026-07-31-0045-v11
+appV11: true

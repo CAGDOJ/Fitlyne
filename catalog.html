@@ -5,7 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#111111">
   <title>Catálogo FITLYNE</title>
-  <link rel="stylesheet" href="catalog.css?v=20260730-2335-v6">
+  <link rel="icon" href="./favicon.ico" sizes="any">
+  <link rel="icon" type="image/svg+xml" href="./assets/icon.svg">
+  <link rel="stylesheet" href="catalog.css?v=20260731-0045-v11">
 </head>
 <body>
   <header class="catalog-header">
@@ -62,13 +64,14 @@
         Observação do pedido
         <textarea id="cartNote" rows="3" placeholder="Ex.: Prefiro retirada, confirmar cor antes..."></textarea>
       </label>
-      <button id="checkoutWhatsApp" class="checkout-button">Solicitar pelo WhatsApp</button>
+      <button id="checkoutWhatsApp" type="button" class="checkout-button">Solicitar pelo WhatsApp</button>
+      <p id="checkoutHelp" class="checkout-help">O pedido será aberto no WhatsApp da loja.</p>
     </div>
   </aside>
   <div id="cartBackdrop" class="cart-backdrop"></div>
 
   <div id="toast"></div>
-  <script src="./fitlyne-config-v7.js?v=20260730-2355"></script>
-  <script src="./catalog-v7.js?v=20260730-2355"></script>
+  <script src="./fitlyne-config-v11.js?v=20260731-0045"></script>
+  <script src="./catalog-v11.js?v=20260731-0045"></script>
 </body>
 </html>

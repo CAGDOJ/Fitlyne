@@ -1,5 +1,16 @@
-# FITLYNE V7
+# FITLYNE V11
 
-Versão completa com autenticação do painel, catálogo e upload de fotos via Google Apps Script para Cloudinary.
+Sistema de gestão e catálogo público da FITLYNE.
 
-Leia `LEIA-PRIMEIRO-V7.txt` antes de publicar.
+## Principais recursos
+
+- painel protegido por PIN;
+- cadastro com galeria ou câmera no celular;
+- upload de imagens via Google Apps Script e Cloudinary;
+- catálogo público com carrinho e solicitação pelo WhatsApp;
+- estoque interno oculto dos clientes;
+- status Disponível, Esgotado e Reposição em breve;
+- gestão de estoque, vendas, clientes, despesas e configurações;
+- carregamento otimizado e cache breve do catálogo.
+
+Leia `LEIA-PRIMEIRO-V11.txt` antes de publicar.

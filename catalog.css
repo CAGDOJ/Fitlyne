@@ -42,3 +42,16 @@ dialog{width:min(94vw,680px);border:0;border-radius:22px;padding:0;box-shadow:0 
 .checkout-button{width:100%;border:0;border-radius:13px;background:#111;color:#fff;padding:14px;font-weight:850}
 .dialog-add-cart{width:100%;border:1px solid #111;background:#fff;color:#111;border-radius:12px;padding:13px;margin-top:9px;font-weight:800}
 @media(max-width:520px){.catalog-header{padding:13px 14px}.cart-button{padding:9px 11px}.hero{padding:25px}.hero h1{font-size:2.25rem}}
+
+/* V11 — estoque interno oculto e status público */
+.image-wrap{position:relative}.image-wrap>img{display:block}
+.availability-badge{display:inline-flex;align-items:center;width:max-content;padding:6px 9px;border-radius:999px;font-size:.72rem;font-weight:850;line-height:1}
+.image-wrap>.availability-badge{position:absolute;left:10px;top:10px;box-shadow:0 4px 14px #0002}
+.availability-badge.available{background:#e5f5ea;color:#176435}
+.availability-badge.sold-out{background:#fbe8e7;color:#9f231d}
+.availability-badge.restock{background:#fff2ce;color:#865900}
+.unavailable-card .image-wrap img{filter:saturate(.55);opacity:.82}
+.dialog-badges{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-bottom:9px}
+.add-cart:disabled,.dialog-add-cart:disabled{background:#ececec!important;border-color:#d4d4d4!important;color:#6d6d6d!important;cursor:not-allowed}
+.catalog-loading{grid-column:1/-1;text-align:center;padding:28px}
+button:disabled{cursor:not-allowed}
