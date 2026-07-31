@@ -41,6 +41,30 @@ function toast(message) {
   window.__fitlyneToast = setTimeout(() => { element.style.display = "none"; }, 2800);
 }
 
+async function publicApi(action, payload = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 25000);
+  try {
+    const response = await fetch(FITLYNE_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action, payload }),
+      redirect: "follow",
+      cache: "no-store",
+      signal: controller.signal
+    });
+    const raw = await response.text();
+    let output;
+    try { output = JSON.parse(raw); }
+    catch (error) { throw new Error(`A API retornou uma resposta inválida (HTTP ${response.status}).`); }
+    if (!response.ok || !output.ok) throw new Error(output.error || "Não foi possível concluir a solicitação.");
+    return output.data;
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("A operação demorou demais. Tente novamente.");
+    throw error;
+  } finally { clearTimeout(timer); }
+}
+
 function placeholder() {
   return "data:image/svg+xml;charset=utf-8," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="750"><rect width="100%" height="100%" fill="#eee"/><text x="50%" y="50%" text-anchor="middle" font-family="Arial" font-size="30" fill="#999">SEM FOTO</text></svg>');
 }
@@ -190,7 +214,7 @@ function renderCatalog() {
         <p class="price">${money(product.PRECO_VENDA)}</p>
         <div class="product-actions">
           <button onclick="openProduct('${product.ID}')">Ver produto</button>
-          <button class="add-cart" ${available ? `onclick="addToCart('${product.ID}')"` : "disabled"}>${available ? "Adicionar ao carrinho" : status.label}</button>
+          <button class="add-cart ${available ? "" : "request-stock"}" ${available ? `onclick="addToCart('${product.ID}')"` : `onclick="openRestockRequest('${product.ID}')"`}>${available ? "Adicionar ao carrinho" : "Avise-me quando chegar"}</button>
         </div>
       </div>
     </article>`;
@@ -216,10 +240,83 @@ window.openProduct = function openProduct(productId) {
       <p>${esc(product.DESCRICAO || "")}</p>
       <p><b>${esc(product.TAMANHO_EXIBICAO || "")}</b>${product.COR_TOM ? " · " + esc(product.COR_TOM) : ""}</p>
       <h2>${money(product.PRECO_VENDA)}</h2>
-      <button class="dialog-add-cart" ${available ? `onclick="addToCart('${product.ID}', true)"` : "disabled"}>${available ? "Adicionar ao carrinho" : status.label}</button>
+      <button class="dialog-add-cart ${available ? "" : "request-stock"}" ${available ? `onclick="addToCart('${product.ID}', true)"` : `onclick="openRestockRequest('${product.ID}', true)"`}>${available ? "Adicionar ao carrinho" : "Avise-me quando chegar"}</button>
     </div>`;
   $("#productDialog").showModal();
 };
+
+
+function rememberCustomer(name, phone) {
+  localStorage.setItem("fitlyneCustomer", JSON.stringify({ name, phone }));
+}
+
+function rememberedCustomer() {
+  try { return JSON.parse(localStorage.getItem("fitlyneCustomer") || "{}"); }
+  catch (error) { return {}; }
+}
+
+function openRequestDialog(product = null) {
+  const remembered = rememberedCustomer();
+  $("#requestProductId").value = product?.ID || "";
+  $("#requestCustomerName").value = remembered.name || "";
+  $("#requestCustomerPhone").value = remembered.phone || "";
+  $("#requestDetails").value = "";
+  $("#requestConsent").checked = false;
+  if (product) {
+    $("#requestDialogTitle").textContent = `Avise-me sobre ${product.NOME}`;
+    $("#requestDialogText").textContent = "Quando o produto ficar disponível, seu pedido aparecerá na gestão da FITLYNE e você poderá receber o aviso pelo WhatsApp.";
+    $("#requestDescription").value = product.NOME;
+    $("#requestDescription").readOnly = true;
+    $("#requestDescriptionLabel").querySelector("#requestDescription").required = false;
+  } else {
+    $("#requestDialogTitle").textContent = "Solicitar um produto";
+    $("#requestDialogText").textContent = "Não encontrou o que procura? Deixe o pedido registrado para a FITLYNE verificar.";
+    $("#requestDescription").value = "";
+    $("#requestDescription").readOnly = false;
+    $("#requestDescription").required = true;
+  }
+  $("#requestDialog").showModal();
+  setTimeout(() => $("#requestCustomerName").focus(), 50);
+}
+
+window.openRestockRequest = function openRestockRequest(productId, closeProduct = false) {
+  const product = state.products.find((entry) => sameId(entry.ID, productId));
+  if (!product) return toast("Produto não encontrado.");
+  if (closeProduct && $("#productDialog").open) $("#productDialog").close();
+  openRequestDialog(product);
+};
+
+async function submitRequest(event) {
+  event.preventDefault();
+  const button = $("#submitRequestBtn");
+  const productId = $("#requestProductId").value.trim();
+  const product = state.products.find((entry) => sameId(entry.ID, productId));
+  const name = $("#requestCustomerName").value.trim();
+  const phone = normalizePhone($("#requestCustomerPhone").value);
+  const description = $("#requestDescription").value.trim();
+  const details = $("#requestDetails").value.trim();
+  if (!name) return toast("Digite seu nome.");
+  if (!validPhone(phone)) return toast("Digite um WhatsApp válido com DDI + DDD + número.");
+  if (!product && !description) return toast("Informe o produto que procura.");
+  if (!$("#requestConsent").checked) return toast("Autorize o aviso pelo WhatsApp para continuar.");
+  button.disabled = true;
+  button.textContent = "Registrando...";
+  try {
+    await publicApi("requestProduct", {
+      type: product ? "REPOSICAO" : "PRODUTO_NAO_CADASTRADO",
+      productId: product?.ID || "",
+      productName: product?.NOME || description,
+      name,
+      phone,
+      details: details || (!product ? description : ""),
+      consent: true
+    });
+    rememberCustomer(name, phone);
+    $("#requestDialog").close();
+    toast(product ? "Pronto! Avisaremos pelo WhatsApp quando chegar." : "Solicitação registrada. A FITLYNE recebeu seu pedido.");
+  } catch (error) { toast(error.message); }
+  finally { button.disabled = false; button.textContent = "Registrar solicitação"; }
+}
 
 window.addToCart = function addToCart(productId, closeDialog = false) {
   const product = state.products.find((entry) => sameId(entry.ID, productId));
@@ -326,6 +423,9 @@ $$('[data-filter]').forEach((button) => button.onclick = () => {
   renderCatalog();
 });
 $("#closeDialog").onclick = () => $("#productDialog").close();
+$("#openGeneralRequest").onclick = () => openRequestDialog();
+$("#closeRequestDialog").onclick = () => $("#requestDialog").close();
+$("#requestForm").onsubmit = submitRequest;
 $("#openCart").onclick = openCart;
 $("#closeCart").onclick = closeCart;
 $("#cartBackdrop").onclick = closeCart;

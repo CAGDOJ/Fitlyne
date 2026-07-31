@@ -8,7 +8,7 @@
   <link rel="icon" href="./favicon.ico" sizes="any">
   <link rel="icon" type="image/svg+xml" href="./assets/icon.svg">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="styles.css?v=2026-07-31-final-limpa">
+  <link rel="stylesheet" href="styles.css?v=2026-07-31-profissional-avisos">
 </head>
 <body class="guest">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -26,6 +26,7 @@
     <symbol id="i-logout" viewBox="0 0 24 24"><path d="M10 4H4v16h6M14 8l4 4-4 4M8 12h10"/></symbol>
     <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m5 18 5-5 3 3 2-2 4 4"/></symbol>
     <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 7h4l2-3h4l2 3h4v13H4z"/><circle cx="12" cy="13" r="4"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></symbol>
   </svg>
   <div id="toast"></div>
 
@@ -50,6 +51,7 @@
       <a class="drawer-link" href="./catalog.html" target="_blank" rel="noopener"><svg class="nav-icon"><use href="#i-store"></use></svg><span>Ver catálogo público</span></a>
       <button type="button" data-view="stock"><svg class="nav-icon"><use href="#i-stock"></use></svg><span>Estoque</span></button>
       <button type="button" data-view="sales"><svg class="nav-icon"><use href="#i-cart"></use></svg><span>Vendas</span></button>
+      <button type="button" data-view="requests"><svg class="nav-icon"><use href="#i-bell"></use></svg><span>Solicitações</span><span id="requestMenuCount" class="nav-count" hidden>0</span></button>
       <button type="button" data-view="clients"><svg class="nav-icon"><use href="#i-users"></use></svg><span>Clientes</span></button>
       <button type="button" data-view="finance"><svg class="nav-icon"><use href="#i-wallet"></use></svg><span>Financeiro</span></button>
       <button type="button" data-view="settings"><svg class="nav-icon"><use href="#i-settings"></use></svg><span>Configurações</span></button>
@@ -60,15 +62,16 @@
 
   <main id="app">
     <section id="loginView" class="view active center-view">
-      <div class="card login-card">
+      <form id="loginForm" class="card login-card" novalidate>
         <div class="logo-circle">F</div>
         <h1>FITLYNE</h1>
-        <p>Gestão simples pelo celular</p>
+        <p>Gestão simples</p>
         <label>PIN administrativo
-          <input id="pinInput" type="password" inputmode="numeric" maxlength="8" placeholder="Digite o PIN">
+          <input id="pinInput" type="password" inputmode="numeric" maxlength="8" placeholder="Digite o PIN" autocomplete="current-password" required>
         </label>
-        <button class="primary" id="loginBtn">Entrar</button>
-      </div>
+        <button class="primary" id="loginBtn" type="submit">Entrar</button>
+        <p id="loginMessage" class="login-message" role="status" aria-live="polite"></p>
+      </form>
     </section>
 
     <section id="dashboardView" class="view">
@@ -81,12 +84,17 @@
       <div class="card">
         <h2>Ações rápidas</h2>
         <div class="quick-grid">
-          <button data-view="productForm">Cadastrar pelo celular</button>
+          <button data-view="productForm">Cadastrar produto</button>
           <button data-view="sales">Nova venda</button>
           <button data-view="stock">Ajustar estoque</button>
           <a class="quick-action" href="./catalog.html" target="_blank" rel="noopener">Ver catálogo público</a>
+          <button data-view="requests">Solicitações de clientes</button>
           <button data-view="settings">Configurar WhatsApp</button>
         </div>
+      </div>
+      <div class="card">
+        <div class="section-heading"><div><h2>Solicitações recentes</h2><p>Clientes aguardando produtos ou reposições.</p></div><button type="button" class="ghost compact" data-view="requests">Ver todas</button></div>
+        <div id="dashboardRequestList" class="list"></div>
       </div>
       <div class="card">
         <div class="section-heading"><div><h2>Estoque baixo</h2><p>Somente produtos acima de zero e abaixo do estoque mínimo.</p></div></div>
@@ -234,6 +242,28 @@
       <div class="card"><h2>Vendas recentes</h2><div id="salesList" class="list"></div></div>
     </section>
 
+
+    <section id="requestsView" class="view">
+      <div class="page-title"><div><h1>Solicitações</h1><p>Produtos pedidos e clientes aguardando reposição</p></div><button id="notifyAllReadyBtn" type="button" class="primary compact">Avisar clientes prontos</button></div>
+      <div id="requestStats" class="stats"></div>
+      <div id="whatsappApiNotice" class="status-banner warning hidden">
+        <div><strong>Aviso automático não configurado</strong><small>As solicitações continuam salvas. Configure a API oficial para enviar os avisos sem abrir conversa por conversa.</small></div>
+        <button type="button" class="ghost compact" data-view="settings">Configurar</button>
+      </div>
+      <div class="filters card request-filters">
+        <input id="requestSearch" placeholder="Pesquisar cliente, telefone ou produto">
+        <select id="requestStatusFilter">
+          <option value="">Todos os status</option>
+          <option value="AGUARDANDO">Aguardando</option>
+          <option value="PRONTO_PARA_AVISAR">Produto disponível</option>
+          <option value="NOTIFICADO">Notificado</option>
+          <option value="ATENDIDO">Atendido</option>
+          <option value="CANCELADO">Cancelado</option>
+        </select>
+      </div>
+      <div id="requestList" class="request-list"></div>
+    </section>
+
     <section id="clientsView" class="view">
       <div class="page-title"><div><h1>Clientes</h1><p>Histórico e contato</p></div></div>
       <div class="card"><div id="clientsList" class="list"></div></div>
@@ -270,10 +300,35 @@
           <button type="submit" class="primary" id="saveSettingsBtn">Salvar configurações</button>
         </div>
       </form>
+
+      <form id="whatsappApiForm" class="card form-grid">
+        <div class="full section-heading"><div><h2>Avisos automáticos pelo WhatsApp</h2><p>Integração opcional com a API oficial da Meta. O token fica guardado somente nas propriedades privadas do Apps Script.</p></div><span id="whatsappApiBadge" class="publication-badge hidden-product">Não configurado</span></div>
+        <label class="checkbox full"><input id="whatsappAutoEnabled" type="checkbox"> Enviar automaticamente quando o estoque voltar</label>
+        <label>Phone Number ID
+          <input id="whatsappPhoneNumberId" inputmode="numeric" placeholder="ID do número no Meta">
+        </label>
+        <label>Versão da Graph API
+          <input id="whatsappGraphVersion" placeholder="Ex.: v23.0">
+        </label>
+        <label>Nome do template
+          <input id="whatsappTemplateName" placeholder="produto_disponivel">
+        </label>
+        <label>Idioma do template
+          <input id="whatsappTemplateLanguage" placeholder="pt_BR">
+        </label>
+        <label class="full">Token permanente
+          <input id="whatsappAccessToken" type="password" autocomplete="new-password" placeholder="Deixe vazio para manter o token atual">
+          <small class="field-help">Nunca coloque o token no GitHub ou no arquivo fitlyne-config.js.</small>
+        </label>
+        <div class="form-actions full">
+          <button type="button" class="ghost" id="testWhatsappApiBtn">Testar integração</button>
+          <button type="submit" class="primary" id="saveWhatsappApiBtn">Salvar integração</button>
+        </div>
+      </form>
     </section>
 
   </main>
-  <script src="./bootstrap.js?v=2026-07-31-final-limpa" data-entry="./app.js"></script>
+  <script src="./bootstrap.js?v=2026-07-31-profissional-avisos" data-entry="./app.js"></script>
 </body>
 </html>
 

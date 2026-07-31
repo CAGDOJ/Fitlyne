@@ -1,0 +1,6 @@
+1. Substitua o Code.gs no Apps Script.
+2. Execute setupSystem uma vez.
+3. Crie NOVA VERSÃO na implantação existente.
+4. Envie os arquivos deste pacote para a raiz do GitHub.
+5. Entre no painel e teste o login.
+6. Abra o catálogo e teste “Solicitar produto” e “Avise-me quando chegar”.

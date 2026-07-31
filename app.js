@@ -25,6 +25,8 @@ const state = {
   sales: [],
   clients: [],
   expenses: [],
+  requests: [],
+  whatsappApi: {},
   config: {},
   pendingFiles: [],
   editingId: null,
@@ -68,6 +70,8 @@ function normalizeLoadedData(data) {
   state.sales = Array.isArray(data.sales) ? data.sales : [];
   state.clients = Array.isArray(data.clients) ? data.clients : [];
   state.expenses = Array.isArray(data.expenses) ? data.expenses : [];
+  state.requests = Array.isArray(data.requests) ? data.requests : [];
+  state.whatsappApi = data.whatsappApi || {};
   state.config = data.config || {};
 }
 
@@ -84,7 +88,14 @@ function toast(message) {
   element.textContent = message;
   element.classList.add("show");
   clearTimeout(window.__fitlyneToast);
-  window.__fitlyneToast = setTimeout(() => element.classList.remove("show"), 3200);
+  window.__fitlyneToast = setTimeout(() => element.classList.remove("show"), 4200);
+}
+
+function setLoginMessage(message = "", type = "") {
+  const element = $("#loginMessage");
+  if (!element) return;
+  element.textContent = message;
+  element.className = `login-message ${type}`.trim();
 }
 
 function normalizePhone(value) {
@@ -132,7 +143,7 @@ async function api(action, payload = {}, auth = true) {
     try {
       output = JSON.parse(raw);
     } catch (error) {
-      throw new Error(`A API não retornou JSON (HTTP ${response.status}). Verifique a implantação do Apps Script.`);
+      throw new Error(`A API não retornou JSON (HTTP ${response.status}). Confirme se a implantação está como “Qualquer pessoa” e se a URL termina em /exec.`);
     }
     if (!response.ok || !output.ok) throw new Error(output.error || `Erro na API (HTTP ${response.status})`);
     return output.data;
@@ -193,28 +204,42 @@ function showView(name) {
   if (name === "products") renderProducts();
   if (name === "stock") renderMovements();
   if (name === "sales") renderSales();
+  if (name === "requests") renderRequests();
   if (name === "clients") renderClients();
   if (name === "finance") renderFinance();
   if (name === "settings") renderSettings();
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-async function login() {
+async function login(event) {
+  event?.preventDefault?.();
   const pin = $("#pinInput").value.trim();
-  if (!pin) return toast("Digite o PIN.");
+  if (!pin) {
+    setLoginMessage("Digite o PIN administrativo.", "error");
+    $("#pinInput").focus();
+    return;
+  }
   const button = $("#loginBtn");
   button.disabled = true;
-  button.textContent = "Entrando...";
+  button.textContent = "Verificando...";
+  setLoginMessage("Conectando ao sistema...", "loading");
   try {
     const result = await api("login", { pin }, false);
+    if (!result?.token) throw new Error("A API não devolveu uma sessão válida.");
     state.token = result.token;
     sessionStorage.setItem("fitlyneToken", result.token);
+    setLoginMessage("PIN correto. Carregando a gestão...", "success");
     await loadAll();
     setAuthenticatedUI(true);
     showView("dashboard");
-    toast("Bem-vindo!");
+    setLoginMessage("");
+    toast("Acesso liberado.");
   } catch (error) {
-    toast(error.message);
+    sessionStorage.removeItem("fitlyneToken");
+    state.token = "";
+    const message = error?.message || "Não foi possível entrar.";
+    setLoginMessage(message, "error");
+    toast(message);
   } finally {
     button.disabled = false;
     button.textContent = "Entrar";
@@ -228,6 +253,7 @@ async function loadAll() {
   $("#brandSubtitle").textContent = state.config.SUBTITULO || C.STORE_SUBTITLE;
   populateProductSelects();
   renderWhatsappWarning();
+  updateRequestIndicators();
 }
 
 function logout() {
@@ -276,6 +302,12 @@ function renderDashboard() {
   $("#lowStockList").innerHTML = low.length
     ? low.slice(0, 8).map((product) => `<div class="list-item"><div><b>${escapeHtml(product.NOME)}</b><small>${escapeHtml(product.TAMANHO_EXIBICAO || "")} · ${escapeHtml(product.COR_TOM || "")}</small></div><span class="badge">${product.ESTOQUE_ATUAL}</span></div>`).join("")
     : '<p class="muted">Nenhum produto com estoque baixo.</p>';
+  const pending = state.requests.filter((request) => !["ATENDIDO", "CANCELADO"].includes(String(request.STATUS || "AGUARDANDO")));
+  const dashboardList = $("#dashboardRequestList");
+  if (dashboardList) dashboardList.innerHTML = pending.length
+    ? pending.slice(0, 5).map((request) => `<div class="list-item"><div><b>${escapeHtml(request.PRODUTO || request.DETALHES || "Produto solicitado")}</b><small>${escapeHtml(request.NOME || "Cliente")} · ${requestStatusLabel(request.STATUS)}</small></div><span class="badge">${escapeHtml(request.TIPO === "PRODUTO_NAO_CADASTRADO" ? "Pedido" : "Reposição")}</span></div>`).join("")
+    : '<p class="muted">Nenhuma solicitação pendente.</p>';
+  updateRequestIndicators();
   renderWhatsappWarning();
 }
 
@@ -680,6 +712,168 @@ function renderSales() {
   $("#salesList").innerHTML = state.sales.slice(0, 30).map((sale) => `<div class="list-item"><div><b>${escapeHtml(sale.PRODUTO)}</b><small>${escapeHtml(sale.CLIENTE || "Sem cliente")} · ${escapeHtml(sale.PAGAMENTO)}</small></div><span class="amount positive">${money(sale.TOTAL)}</span></div>`).join("") || '<p class="muted">Sem vendas.</p>';
 }
 
+
+function requestStatusLabel(status) {
+  return ({
+    AGUARDANDO: "Aguardando",
+    PRONTO_PARA_AVISAR: "Produto disponível",
+    NOTIFICADO: "Notificado",
+    ATENDIDO: "Atendido",
+    CANCELADO: "Cancelado"
+  })[String(status || "AGUARDANDO").toUpperCase()] || "Aguardando";
+}
+
+function requestStatusClass(status) {
+  return ({
+    AGUARDANDO: "automatic",
+    PRONTO_PARA_AVISAR: "restock",
+    NOTIFICADO: "available",
+    ATENDIDO: "published",
+    CANCELADO: "hidden-product"
+  })[String(status || "AGUARDANDO").toUpperCase()] || "automatic";
+}
+
+function updateRequestIndicators() {
+  const pending = state.requests.filter((request) => !["ATENDIDO", "CANCELADO", "NOTIFICADO"].includes(String(request.STATUS || "AGUARDANDO").toUpperCase())).length;
+  const badge = $("#requestMenuCount");
+  if (badge) {
+    badge.textContent = pending > 99 ? "99+" : String(pending);
+    badge.hidden = pending === 0;
+  }
+  const notice = $("#whatsappApiNotice");
+  if (notice) notice.classList.toggle("hidden", Boolean(state.whatsappApi?.configured));
+}
+
+function requestMessage(request) {
+  const store = state.config.NOME_LOJA || C.STORE_NAME;
+  const product = request.PRODUTO || request.DETALHES || "o produto solicitado";
+  const catalogUrl = state.config.CATALOG_URL || "https://cagdoj.github.io/Fitlyne/catalog.html";
+  return `Olá, ${request.NOME || "tudo bem"}! O produto ${product} que você solicitou já está disponível na ${store}. Veja no catálogo: ${catalogUrl}`;
+}
+
+function renderRequests() {
+  const search = String($("#requestSearch")?.value || "").toLowerCase();
+  const filter = String($("#requestStatusFilter")?.value || "").toUpperCase();
+  const rows = state.requests.filter((request) => {
+    const status = String(request.STATUS || "AGUARDANDO").toUpperCase();
+    const text = `${request.NOME} ${request.TELEFONE} ${request.PRODUTO} ${request.DETALHES}`.toLowerCase();
+    return (!filter || status === filter) && (!search || text.includes(search));
+  });
+  const counts = {
+    waiting: state.requests.filter((request) => String(request.STATUS || "AGUARDANDO").toUpperCase() === "AGUARDANDO").length,
+    ready: state.requests.filter((request) => String(request.STATUS || "").toUpperCase() === "PRONTO_PARA_AVISAR").length,
+    notified: state.requests.filter((request) => String(request.STATUS || "").toUpperCase() === "NOTIFICADO").length,
+    total: state.requests.length
+  };
+  const stats = $("#requestStats");
+  if (stats) stats.innerHTML = [["Aguardando", counts.waiting], ["Prontos para avisar", counts.ready], ["Notificados", counts.notified], ["Total", counts.total]].map(([label, value]) => `<div class="stat"><strong>${value}</strong><span>${label}</span></div>`).join("");
+  const list = $("#requestList");
+  if (!list) return;
+  list.innerHTML = rows.length ? rows.map((request) => {
+    const status = String(request.STATUS || "AGUARDANDO").toUpperCase();
+    const canNotify = status === "PRONTO_PARA_AVISAR" || status === "AGUARDANDO";
+    return `<article class="card request-card" data-request-id="${escapeHtml(request.ID)}">
+      <div class="request-card-head"><div><span class="availability-badge ${requestStatusClass(status)}">${requestStatusLabel(status)}</span><h3>${escapeHtml(request.PRODUTO || "Produto não cadastrado")}</h3></div><small>${escapeHtml(String(request.DATA || ""))}</small></div>
+      <p><b>${escapeHtml(request.NOME || "Cliente")}</b> · ${escapeHtml(request.TELEFONE || "Sem telefone")}</p>
+      ${request.DETALHES ? `<p class="muted">${escapeHtml(request.DETALHES)}</p>` : ""}
+      ${request.ULTIMO_ERRO ? `<p class="request-error">${escapeHtml(request.ULTIMO_ERRO)}</p>` : ""}
+      <div class="request-actions">
+        <button type="button" data-request-action="manual" data-id="${escapeHtml(request.ID)}">Abrir WhatsApp</button>
+        <button type="button" class="primary" data-request-action="notify" data-id="${escapeHtml(request.ID)}" ${canNotify ? "" : "disabled"}>Enviar aviso automático</button>
+        <button type="button" data-request-action="attended" data-id="${escapeHtml(request.ID)}">Marcar atendido</button>
+        <button type="button" class="danger" data-request-action="cancel" data-id="${escapeHtml(request.ID)}">Cancelar</button>
+      </div>
+    </article>`;
+  }).join("") : '<div class="card"><p class="muted">Nenhuma solicitação encontrada.</p></div>';
+  updateRequestIndicators();
+}
+
+async function updateRequestStatus(id, status) {
+  try {
+    await api("updateRequestStatus", { id, status });
+    await loadAll();
+    renderRequests();
+    renderDashboard();
+    toast("Solicitação atualizada.");
+  } catch (error) { toast(error.message); }
+}
+
+async function notifyRequest(id) {
+  try {
+    const result = await api("notifyRequest", { id });
+    await loadAll();
+    renderRequests();
+    renderDashboard();
+    toast(result?.message || "Aviso enviado pelo WhatsApp.");
+  } catch (error) { toast(error.message); }
+}
+
+async function notifyAllReady() {
+  const button = $("#notifyAllReadyBtn");
+  button.disabled = true;
+  button.textContent = "Enviando...";
+  try {
+    const result = await api("notifyAllReady", {});
+    await loadAll();
+    renderRequests();
+    renderDashboard();
+    toast(`${result.sent || 0} aviso(s) enviado(s).${result.failed ? ` ${result.failed} falharam.` : ""}`);
+  } catch (error) { toast(error.message); }
+  finally { button.disabled = false; button.textContent = "Avisar clientes prontos"; }
+}
+
+function openRequestWhatsapp(id) {
+  const request = state.requests.find((entry) => sameId(entry.ID, id));
+  if (!request) return toast("Solicitação não encontrada.");
+  openWhatsapp(request.TELEFONE, requestMessage(request));
+}
+
+async function saveWhatsappApiSettings(event) {
+  event.preventDefault();
+  const button = $("#saveWhatsappApiBtn");
+  button.disabled = true;
+  button.textContent = "Salvando...";
+  try {
+    const payload = {
+      enabled: $("#whatsappAutoEnabled").checked,
+      phoneNumberId: $("#whatsappPhoneNumberId").value.trim(),
+      graphVersion: $("#whatsappGraphVersion").value.trim(),
+      templateName: $("#whatsappTemplateName").value.trim(),
+      templateLanguage: $("#whatsappTemplateLanguage").value.trim(),
+      accessToken: $("#whatsappAccessToken").value.trim()
+    };
+    state.whatsappApi = await api("saveWhatsappApiSettings", payload);
+    $("#whatsappAccessToken").value = "";
+    renderWhatsappApiSettings();
+    updateRequestIndicators();
+    toast("Integração do WhatsApp salva.");
+  } catch (error) { toast(error.message); }
+  finally { button.disabled = false; button.textContent = "Salvar integração"; }
+}
+
+function renderWhatsappApiSettings() {
+  const status = state.whatsappApi || {};
+  $("#whatsappAutoEnabled").checked = Boolean(status.enabled);
+  $("#whatsappPhoneNumberId").value = status.phoneNumberId || "";
+  $("#whatsappGraphVersion").value = status.graphVersion || "v23.0";
+  $("#whatsappTemplateName").value = status.templateName || "produto_disponivel";
+  $("#whatsappTemplateLanguage").value = status.templateLanguage || "pt_BR";
+  const badge = $("#whatsappApiBadge");
+  if (badge) {
+    badge.textContent = status.configured ? (status.enabled ? "Automático ativo" : "Configurado") : "Não configurado";
+    badge.className = `publication-badge ${status.configured ? "published" : "hidden-product"}`;
+  }
+}
+
+async function testWhatsappApi() {
+  const phone = prompt("Digite um WhatsApp de teste com DDI + DDD + número:");
+  if (!phone) return;
+  try {
+    await api("testWhatsappApi", { phone });
+    toast("Mensagem de teste solicitada à API oficial.");
+  } catch (error) { toast(error.message); }
+}
+
 function renderClients() {
   $("#clientsList").innerHTML = state.clients.map((client) => `<div class="list-item"><div><b>${escapeHtml(client.NOME)}</b><small>${escapeHtml(client.TELEFONE || "")} · ${client.COMPRAS || 0} compras</small></div><span>${money(client.TOTAL_GASTO)}</span></div>`).join("") || '<p class="muted">Sem clientes.</p>';
 }
@@ -708,6 +902,7 @@ function renderSettings() {
   $("#storeWhatsapp").value = state.config.WHATSAPP || "";
   $("#storeNameInput").value = state.config.NOME_LOJA || C.STORE_NAME;
   $("#storeSubtitleInput").value = state.config.SUBTITULO || C.STORE_SUBTITLE;
+  renderWhatsappApiSettings();
 }
 
 async function saveSettings(event) {
@@ -747,8 +942,7 @@ function bind() {
   $("#menuBtn").onclick = openDrawer;
   $("#closeDrawer").onclick = closeDrawer;
   $("#backdrop").onclick = closeDrawer;
-  $("#loginBtn").onclick = login;
-  $("#pinInput").addEventListener("keydown", (event) => { if (event.key === "Enter") login(); });
+  $("#loginForm").onsubmit = login;
   $("#logoutBtn").onclick = logout;
   $$("[data-view]").forEach((button) => button.onclick = () => {
     if (!isAuthenticated()) return showView("login");
@@ -779,6 +973,20 @@ function bind() {
   $("#expenseForm").onsubmit = saveExpense;
   $("#settingsForm").onsubmit = saveSettings;
   $("#testWhatsappBtn").onclick = testWhatsapp;
+  $("#requestSearch").oninput = renderRequests;
+  $("#requestStatusFilter").onchange = renderRequests;
+  $("#notifyAllReadyBtn").onclick = notifyAllReady;
+  $("#requestList").addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-request-action]");
+    if (!button) return;
+    const id = button.dataset.id || "";
+    if (button.dataset.requestAction === "manual") openRequestWhatsapp(id);
+    if (button.dataset.requestAction === "notify") notifyRequest(id);
+    if (button.dataset.requestAction === "attended") updateRequestStatus(id, "ATENDIDO");
+    if (button.dataset.requestAction === "cancel") updateRequestStatus(id, "CANCELADO");
+  });
+  $("#whatsappApiForm").onsubmit = saveWhatsappApiSettings;
+  $("#testWhatsappApiBtn").onclick = testWhatsappApi;
 }
 
 async function cleanOldCacheOnce() {
@@ -817,6 +1025,14 @@ function installImageFallback() {
 }
 
 async function init() {
+  window.addEventListener("unhandledrejection", (event) => {
+    const message = event.reason?.message || "Ocorreu um erro inesperado.";
+    console.error("FITLYNE:", event.reason);
+    if (!isAuthenticated()) setLoginMessage(message, "error");
+  });
+  window.addEventListener("error", (event) => {
+    if (!isAuthenticated() && event.message) setLoginMessage(`Erro ao carregar o sistema: ${event.message}`, "error");
+  });
   installImageFallback();
   bind();
   resetProductForm();

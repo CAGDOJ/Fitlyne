@@ -129,3 +129,13 @@ button:disabled{cursor:not-allowed;opacity:.58}
 }
 .publication-badge.published { background: #e8f7ec; color: #126b2e; }
 .publication-badge.hidden-product { background: #f2f2f2; color: #666; }
+
+/* Versão profissional — login visível, solicitações e WhatsApp automático */
+.login-message{min-height:22px;margin:10px 0 0!important;font-size:.86rem;font-weight:700;line-height:1.4;text-align:left}
+.login-message.loading{color:#6f6870}.login-message.success{color:#176435}.login-message.error{color:#a3201a}
+.nav-count{margin-left:auto;display:inline-grid!important;place-items:center;min-width:24px;height:24px;padding:0 6px;border-radius:999px;background:#111;color:#fff;font-size:.72rem;font-weight:850}
+.section-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.request-filters{margin-bottom:14px}.request-list{display:grid;gap:12px}.request-card{margin-bottom:0}.request-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.request-card-head h3{margin:9px 0 0}.request-card-head small{color:var(--muted);text-align:right}.request-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}.request-actions button{min-height:42px;border:1px solid var(--line);border-radius:12px;background:#fff;font-weight:750;padding:9px}.request-actions .primary{background:#111;color:#fff;border-color:#111}.request-error{padding:10px;border-radius:12px;background:#fff0ef;color:#9c211a;font-size:.82rem}.availability-badge.published{background:#e8f7ec;color:#126b2e}.availability-badge.hidden-product{background:#f2f2f2;color:#666}
+#whatsappApiForm{margin-top:18px}.section-heading .publication-badge{flex:0 0 auto}
+@media(min-width:760px){.request-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:620px){.request-actions{grid-template-columns:1fr}.page-title{align-items:flex-start;flex-wrap:wrap}.page-title>.compact{width:100%}.section-heading{align-items:flex-start}.status-banner{align-items:flex-start;flex-direction:column}.status-banner button{width:100%}}

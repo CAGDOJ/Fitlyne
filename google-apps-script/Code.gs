@@ -6,10 +6,11 @@ const SHEETS = {
   MOVIMENTACOES: ["ID", "DATA", "ID_PRODUTO", "PRODUTO", "TIPO", "QUANTIDADE", "MOTIVO"],
   VENDAS: ["ID", "DATA", "ID_PRODUTO", "PRODUTO", "QUANTIDADE", "VALOR_UNITARIO", "DESCONTO", "TOTAL", "CLIENTE", "TELEFONE", "PAGAMENTO"],
   CLIENTES: ["ID", "NOME", "TELEFONE", "COMPRAS", "TOTAL_GASTO", "ULTIMA_COMPRA"],
-  DESPESAS: ["ID", "DATA", "DESCRICAO", "CATEGORIA", "VALOR"]
+  DESPESAS: ["ID", "DATA", "DESCRICAO", "CATEGORIA", "VALOR"],
+  SOLICITACOES: ["ID", "DATA", "TIPO", "ID_PRODUTO", "PRODUTO", "NOME", "TELEFONE", "DETALHES", "CONSENTIMENTO_WHATSAPP", "STATUS", "NOTIFICADO_EM", "META_MESSAGE_ID", "ULTIMO_ERRO", "ATUALIZADO_EM"]
 };
 
-const PUBLIC_CACHE_KEY = "FITLYNE_PUBLIC_CATALOG_V15";
+const PUBLIC_CACHE_KEY = "FITLYNE_PUBLIC_CATALOG_PROFISSIONAL";
 const VALID_CATALOG_STATUS = ["AUTOMATICO", "DISPONIVEL", "ESGOTADO", "REPOSICAO"];
 
 function setupSystem() {
@@ -19,9 +20,10 @@ function setupSystem() {
   setDefaultConfig_("NOME_LOJA", "FITLYNE");
   setDefaultConfig_("SUBTITULO", "Moda Fitness & Makeup");
   setDefaultConfig_("TOKEN_TTL_HORAS", "6");
+  setDefaultConfig_("CATALOG_URL", "https://cagdoj.github.io/Fitlyne/catalog.html");
   clearPublicCache_();
   migrateLegacyProducts_();
-  return "Sistema FITLYNE V15 atualizado com sucesso.";
+  return "Sistema FITLYNE profissional atualizado com sucesso.";
 }
 
 function ensureSystem_() {
@@ -53,7 +55,7 @@ function ensureProductStatusColumn_() {
 
 function doGet() {
   ensureProductStatusColumn_();
-  return json_({ ok: true, data: { name: "FITLYNE API", version: "final-limpa" } });
+  return json_({ ok: true, data: { name: "FITLYNE API", version: "profissional-avisos" } });
 }
 
 function doPost(e) {
@@ -64,6 +66,7 @@ function doPost(e) {
     const payload = request.payload || {};
     if (action === "login") return json_({ ok: true, data: login_(payload.pin) });
     if (action === "publicCatalog") return json_({ ok: true, data: publicCatalog_() });
+    if (action === "requestProduct") return json_({ ok: true, data: requestProduct_(payload) });
     if (!validateToken_(request.token)) throw new Error("Sessão inválida. Entre novamente.");
     const handlers = {
       bootstrap: bootstrap_,
@@ -74,7 +77,12 @@ function doPost(e) {
       stockMovement: stockMovement_,
       saveSale: saveSale_,
       saveExpense: saveExpense_,
-      saveSettings: saveSettings_
+      saveSettings: saveSettings_,
+      updateRequestStatus: updateRequestStatus_,
+      notifyRequest: notifyRequest_,
+      notifyAllReady: notifyAllReady_,
+      saveWhatsappApiSettings: saveWhatsappApiSettings_,
+      testWhatsappApi: testWhatsappApi_
     };
     if (!handlers[action]) throw new Error("Ação inválida: " + action);
     return json_({ ok: true, data: handlers[action](payload) });
@@ -116,6 +124,7 @@ function validateToken_(token) {
 }
 
 function bootstrap_() {
+  if (!SpreadsheetApp.getActive().getSheetByName("SOLICITACOES")) ensureSystem_();
   return {
     products: readSheet_("PRODUTOS"),
     photos: readSheet_("FOTOS"),
@@ -124,6 +133,8 @@ function bootstrap_() {
     sales: readSheet_("VENDAS").reverse(),
     clients: readSheet_("CLIENTES"),
     expenses: readSheet_("DESPESAS").reverse(),
+    requests: readSheet_("SOLICITACOES").reverse(),
+    whatsappApi: whatsappApiStatus_(),
     config: config_()
   };
 }
@@ -207,7 +218,8 @@ function publicCatalog_() {
     config: {
       WHATSAPP: allConfig.WHATSAPP || "",
       NOME_LOJA: allConfig.NOME_LOJA || "FITLYNE",
-      SUBTITULO: allConfig.SUBTITULO || "Moda Fitness & Makeup"
+      SUBTITULO: allConfig.SUBTITULO || "Moda Fitness & Makeup",
+      CATALOG_URL: allConfig.CATALOG_URL || "https://cagdoj.github.io/Fitlyne/catalog.html"
     }
   };
   try { cache.put(PUBLIC_CACHE_KEY, JSON.stringify(data), 60); } catch (error) {}
@@ -313,8 +325,12 @@ function saveProduct_(payload) {
   if (!current && number_(product.ESTOQUE_ATUAL) > 0) {
     appendObject_("MOVIMENTACOES", { ID: Utilities.getUuid(), DATA: now, ID_PRODUTO: product.ID, PRODUTO: product.NOME, TIPO: "ENTRADA", QUANTIDADE: product.ESTOQUE_ATUAL, MOTIVO: "ESTOQUE INICIAL" });
   }
+  const oldStock = current ? number_(current.ESTOQUE_ATUAL) : 0;
+  const newStock = number_(product.ESTOQUE_ATUAL);
+  let notifications = { ready: 0, sent: 0, failed: 0 };
+  if (oldStock <= 0 && newStock > 0) notifications = markReadyAndMaybeNotify_(object);
   clearPublicCache_();
-  return { id: product.ID };
+  return { id: product.ID, notifications: notifications };
 }
 
 function setProductStatus_(payload) {
@@ -326,8 +342,10 @@ function setProductStatus_(payload) {
   product.STATUS_CATALOGO = status;
   product.ATUALIZADO_EM = new Date();
   upsert_("PRODUTOS", "ID", product);
+  let notifications = { ready: 0, sent: 0, failed: 0 };
+  if (status === "DISPONIVEL" && number_(product.ESTOQUE_ATUAL) > 0) notifications = markReadyAndMaybeNotify_(product);
   clearPublicCache_();
-  return { status: status };
+  return { status: status, notifications: notifications };
 }
 
 function deleteProduct_(payload) {
@@ -354,8 +372,10 @@ function stockMovement_(payload) {
   product.ATUALIZADO_EM = new Date();
   upsert_("PRODUTOS", "ID", product);
   appendObject_("MOVIMENTACOES", { ID: Utilities.getUuid(), DATA: new Date(), ID_PRODUTO: product.ID, PRODUTO: product.NOME, TIPO: type, QUANTIDADE: quantity, MOTIVO: payload.reason || "" });
+  let notifications = { ready: 0, sent: 0, failed: 0 };
+  if (oldStock <= 0 && next > 0) notifications = markReadyAndMaybeNotify_(product);
   clearPublicCache_();
-  return { stock: next };
+  return { stock: next, notifications: notifications };
 }
 
 function saveSale_(payload) {
@@ -402,8 +422,223 @@ function saveSettings_(payload) {
   setConfig_("WHATSAPP", phone);
   setConfig_("NOME_LOJA", String(payload.NOME_LOJA || "FITLYNE").trim());
   setConfig_("SUBTITULO", String(payload.SUBTITULO || "Moda Fitness & Makeup").trim());
+  if (payload.CATALOG_URL) setConfig_("CATALOG_URL", String(payload.CATALOG_URL).trim());
   clearPublicCache_();
   return true;
+}
+
+
+function normalizePhone_(value) {
+  let digits = String(value || "").replace(/\D/g, "").replace(/^0+/, "");
+  if (digits.length === 10 || digits.length === 11) digits = "55" + digits;
+  return digits;
+}
+
+function validPhone_(value) {
+  const digits = normalizePhone_(value);
+  return /^55\d{10,11}$/.test(digits) || /^\d{12,15}$/.test(digits);
+}
+
+function requestProduct_(payload) {
+  if (!SpreadsheetApp.getActive().getSheetByName("SOLICITACOES")) ensureSystem_();
+  const name = String(payload.name || "").trim().slice(0, 80);
+  const phone = normalizePhone_(payload.phone);
+  const type = String(payload.type || "PRODUTO_NAO_CADASTRADO").toUpperCase() === "REPOSICAO" ? "REPOSICAO" : "PRODUTO_NAO_CADASTRADO";
+  const productId = String(payload.productId || "").trim();
+  let productName = String(payload.productName || "").trim().slice(0, 180);
+  const details = String(payload.details || "").trim().slice(0, 500);
+  if (!name) throw new Error("Informe seu nome.");
+  if (!validPhone_(phone)) throw new Error("Informe um WhatsApp válido com DDI + DDD + número.");
+  if (payload.consent !== true) throw new Error("É necessário autorizar o aviso pelo WhatsApp.");
+  if (productId) {
+    const row = findRow_("PRODUTOS", "ID", productId);
+    if (row) productName = String(rowObject_("PRODUTOS", row).NOME || productName).trim();
+  }
+  if (!productName && !details) throw new Error("Informe o produto que procura.");
+  const existing = readSheet_("SOLICITACOES").find(function(request) {
+    const active = ["AGUARDANDO", "PRONTO_PARA_AVISAR"].indexOf(String(request.STATUS || "AGUARDANDO").toUpperCase()) >= 0;
+    return active && normalizePhone_(request.TELEFONE) === phone && sameId_(request.ID_PRODUTO, productId) && String(request.PRODUTO || "").trim().toUpperCase() === productName.toUpperCase();
+  });
+  const now = new Date();
+  const object = {
+    ID: existing ? existing.ID : "SOL_" + Utilities.getUuid(),
+    DATA: existing ? existing.DATA : now,
+    TIPO: type,
+    ID_PRODUTO: productId,
+    PRODUTO: productName || details,
+    NOME: name,
+    TELEFONE: phone,
+    DETALHES: details,
+    CONSENTIMENTO_WHATSAPP: "SIM",
+    STATUS: existing ? (existing.STATUS || "AGUARDANDO") : "AGUARDANDO",
+    NOTIFICADO_EM: existing ? existing.NOTIFICADO_EM : "",
+    META_MESSAGE_ID: existing ? existing.META_MESSAGE_ID : "",
+    ULTIMO_ERRO: "",
+    ATUALIZADO_EM: now
+  };
+  upsert_("SOLICITACOES", "ID", object);
+  return { id: object.ID, status: object.STATUS, duplicated: Boolean(existing) };
+}
+
+function updateRequestStatus_(payload) {
+  const row = findRow_("SOLICITACOES", "ID", payload.id);
+  if (!row) throw new Error("Solicitação não encontrada.");
+  const allowed = ["AGUARDANDO", "PRONTO_PARA_AVISAR", "NOTIFICADO", "ATENDIDO", "CANCELADO"];
+  const status = String(payload.status || "").toUpperCase();
+  if (allowed.indexOf(status) < 0) throw new Error("Status inválido.");
+  const request = rowObject_("SOLICITACOES", row);
+  request.STATUS = status;
+  request.ATUALIZADO_EM = new Date();
+  upsert_("SOLICITACOES", "ID", request);
+  return { status: status };
+}
+
+function whatsappApiStatus_() {
+  const properties = PropertiesService.getScriptProperties();
+  const phoneNumberId = properties.getProperty("WA_PHONE_NUMBER_ID") || "";
+  const token = properties.getProperty("WA_ACCESS_TOKEN") || "";
+  return {
+    configured: Boolean(phoneNumberId && token),
+    enabled: properties.getProperty("WA_AUTO_ENABLED") === "SIM",
+    phoneNumberId: phoneNumberId,
+    graphVersion: properties.getProperty("WA_GRAPH_VERSION") || "v23.0",
+    templateName: properties.getProperty("WA_TEMPLATE_NAME") || "produto_disponivel",
+    templateLanguage: properties.getProperty("WA_TEMPLATE_LANGUAGE") || "pt_BR",
+    hasToken: Boolean(token)
+  };
+}
+
+function saveWhatsappApiSettings_(payload) {
+  const properties = PropertiesService.getScriptProperties();
+  const phoneNumberId = String(payload.phoneNumberId || "").replace(/\D/g, "");
+  const graphVersion = String(payload.graphVersion || "v23.0").trim();
+  const templateName = String(payload.templateName || "produto_disponivel").trim();
+  const templateLanguage = String(payload.templateLanguage || "pt_BR").trim();
+  const accessToken = String(payload.accessToken || "").trim();
+  if (phoneNumberId && !/^\d+$/.test(phoneNumberId)) throw new Error("Phone Number ID inválido.");
+  if (!/^v\d+\.\d+$/.test(graphVersion)) throw new Error("Versão da Graph API inválida. Exemplo: v23.0");
+  if (!/^[a-z0-9_]+$/.test(templateName)) throw new Error("Nome do template inválido.");
+  properties.setProperty("WA_PHONE_NUMBER_ID", phoneNumberId);
+  properties.setProperty("WA_GRAPH_VERSION", graphVersion);
+  properties.setProperty("WA_TEMPLATE_NAME", templateName);
+  properties.setProperty("WA_TEMPLATE_LANGUAGE", templateLanguage || "pt_BR");
+  properties.setProperty("WA_AUTO_ENABLED", payload.enabled === true ? "SIM" : "NAO");
+  if (accessToken) properties.setProperty("WA_ACCESS_TOKEN", accessToken);
+  return whatsappApiStatus_();
+}
+
+function sendWhatsappTemplate_(phone, customerName, productName) {
+  const settings = whatsappApiStatus_();
+  if (!settings.configured) throw new Error("A API oficial do WhatsApp ainda não foi configurada.");
+  const token = PropertiesService.getScriptProperties().getProperty("WA_ACCESS_TOKEN") || "";
+  const catalogUrl = config_().CATALOG_URL || "https://cagdoj.github.io/Fitlyne/catalog.html";
+  const endpoint = "https://graph.facebook.com/" + settings.graphVersion + "/" + settings.phoneNumberId + "/messages";
+  const body = {
+    messaging_product: "whatsapp",
+    to: normalizePhone_(phone),
+    type: "template",
+    template: {
+      name: settings.templateName,
+      language: { code: settings.templateLanguage },
+      components: [{
+        type: "body",
+        parameters: [
+          { type: "text", text: String(customerName || "Cliente") },
+          { type: "text", text: String(productName || "produto solicitado") },
+          { type: "text", text: String(catalogUrl) }
+        ]
+      }]
+    }
+  };
+  const response = UrlFetchApp.fetch(endpoint, {
+    method: "post",
+    contentType: "application/json",
+    headers: { Authorization: "Bearer " + token },
+    payload: JSON.stringify(body),
+    muteHttpExceptions: true
+  });
+  const status = response.getResponseCode();
+  const raw = response.getContentText();
+  let data = {};
+  try { data = JSON.parse(raw || "{}"); } catch (error) {}
+  if (status < 200 || status >= 300) {
+    const message = data && data.error && data.error.message ? data.error.message : raw.slice(0, 400);
+    throw new Error("WhatsApp recusou a mensagem (HTTP " + status + "): " + (message || "sem detalhes"));
+  }
+  return { id: data && data.messages && data.messages[0] ? data.messages[0].id : "" };
+}
+
+function notifyRequestByObject_(request) {
+  if (String(request.CONSENTIMENTO_WHATSAPP || "").toUpperCase() !== "SIM") throw new Error("A cliente não autorizou o aviso pelo WhatsApp.");
+  const result = sendWhatsappTemplate_(request.TELEFONE, request.NOME, request.PRODUTO);
+  request.STATUS = "NOTIFICADO";
+  request.NOTIFICADO_EM = new Date();
+  request.META_MESSAGE_ID = result.id || "";
+  request.ULTIMO_ERRO = "";
+  request.ATUALIZADO_EM = new Date();
+  upsert_("SOLICITACOES", "ID", request);
+  return result;
+}
+
+function notifyRequest_(payload) {
+  const row = findRow_("SOLICITACOES", "ID", payload.id);
+  if (!row) throw new Error("Solicitação não encontrada.");
+  const request = rowObject_("SOLICITACOES", row);
+  const result = notifyRequestByObject_(request);
+  return { message: "Aviso enviado para " + request.NOME + ".", messageId: result.id || "" };
+}
+
+function notifyAllReady_() {
+  const settings = whatsappApiStatus_();
+  if (!settings.configured) throw new Error("Configure a API oficial do WhatsApp antes de enviar todos automaticamente.");
+  const ready = readSheet_("SOLICITACOES").filter(function(request) {
+    return String(request.STATUS || "").toUpperCase() === "PRONTO_PARA_AVISAR";
+  }).slice(0, 100);
+  let sent = 0;
+  let failed = 0;
+  ready.forEach(function(request) {
+    try { notifyRequestByObject_(request); sent += 1; }
+    catch (error) {
+      failed += 1;
+      request.ULTIMO_ERRO = String(error && error.message ? error.message : error).slice(0, 500);
+      request.ATUALIZADO_EM = new Date();
+      upsert_("SOLICITACOES", "ID", request);
+    }
+  });
+  return { sent: sent, failed: failed, total: ready.length };
+}
+
+function markReadyAndMaybeNotify_(product) {
+  const pending = readSheet_("SOLICITACOES").filter(function(request) {
+    return sameId_(request.ID_PRODUTO, product.ID) && ["AGUARDANDO", "PRONTO_PARA_AVISAR"].indexOf(String(request.STATUS || "AGUARDANDO").toUpperCase()) >= 0;
+  });
+  const settings = whatsappApiStatus_();
+  let sent = 0;
+  let failed = 0;
+  pending.forEach(function(request) {
+    request.PRODUTO = request.PRODUTO || product.NOME;
+    request.STATUS = "PRONTO_PARA_AVISAR";
+    request.ULTIMO_ERRO = "";
+    request.ATUALIZADO_EM = new Date();
+    upsert_("SOLICITACOES", "ID", request);
+    if (settings.configured && settings.enabled) {
+      try { notifyRequestByObject_(request); sent += 1; }
+      catch (error) {
+        failed += 1;
+        request.ULTIMO_ERRO = String(error && error.message ? error.message : error).slice(0, 500);
+        request.ATUALIZADO_EM = new Date();
+        upsert_("SOLICITACOES", "ID", request);
+      }
+    }
+  });
+  return { ready: pending.length, sent: sent, failed: failed };
+}
+
+function testWhatsappApi_(payload) {
+  const phone = normalizePhone_(payload.phone);
+  if (!validPhone_(phone)) throw new Error("Número de teste inválido.");
+  const result = sendWhatsappTemplate_(phone, "Teste FITLYNE", "produto de teste");
+  return { messageId: result.id || "" };
 }
 
 function sheet_(name) {

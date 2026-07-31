@@ -7,7 +7,7 @@
   <title>Catálogo FITLYNE</title>
   <link rel="icon" href="./favicon.ico" sizes="any">
   <link rel="icon" type="image/svg+xml" href="./assets/icon.svg">
-  <link rel="stylesheet" href="catalog.css?v=2026-07-31-final-limpa">
+  <link rel="stylesheet" href="catalog.css?v=2026-07-31-profissional-avisos">
 </head>
 <body>
   <header class="catalog-header">
@@ -25,6 +25,7 @@
       <span>Nova coleção</span>
       <h1>Encontre seu estilo</h1>
       <p>Moda fitness e maquiagem em um só lugar.</p>
+      <button id="openGeneralRequest" type="button" class="hero-request">Não encontrou? Solicite um produto</button>
     </section>
 
     <section class="tools">
@@ -42,6 +43,34 @@
   <dialog id="productDialog">
     <button id="closeDialog" class="close">×</button>
     <div id="dialogContent"></div>
+  </dialog>
+
+
+  <dialog id="requestDialog" class="request-dialog">
+    <button id="closeRequestDialog" class="close" type="button" aria-label="Fechar">×</button>
+    <form id="requestForm" class="request-form">
+      <input id="requestProductId" type="hidden">
+      <div>
+        <span class="request-eyebrow">AVISO DE DISPONIBILIDADE</span>
+        <h2 id="requestDialogTitle">Solicitar produto</h2>
+        <p id="requestDialogText" class="muted">Conte o que procura e deixe seu WhatsApp.</p>
+      </div>
+      <label>Seu nome
+        <input id="requestCustomerName" autocomplete="name" maxlength="80" required placeholder="Como podemos chamar você?">
+      </label>
+      <label>Seu WhatsApp
+        <input id="requestCustomerPhone" autocomplete="tel" inputmode="tel" maxlength="20" required placeholder="Ex.: 5591991234567">
+      </label>
+      <label id="requestDescriptionLabel">Produto que procura
+        <input id="requestDescription" maxlength="180" placeholder="Ex.: Legging preta tamanho M">
+      </label>
+      <label>Detalhes opcionais
+        <textarea id="requestDetails" rows="3" maxlength="500" placeholder="Cor, tamanho, modelo ou outra preferência"></textarea>
+      </label>
+      <label class="request-consent"><input id="requestConsent" type="checkbox" required> Autorizo a FITLYNE a me avisar pelo WhatsApp sobre esta solicitação.</label>
+      <button id="submitRequestBtn" class="request-submit" type="submit">Registrar solicitação</button>
+      <p class="request-privacy">Seu número será usado somente para este atendimento.</p>
+    </form>
   </dialog>
 
   <aside id="cartDrawer" class="cart-drawer" aria-hidden="true">
@@ -71,6 +100,6 @@
   <div id="cartBackdrop" class="cart-backdrop"></div>
 
   <div id="toast"></div>
-  <script src="./bootstrap.js?v=2026-07-31-final-limpa" data-entry="./catalog.js"></script>
+  <script src="./bootstrap.js?v=2026-07-31-profissional-avisos" data-entry="./catalog.js"></script>
 </body>
 </html>
