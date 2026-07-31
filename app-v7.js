@@ -10,11 +10,11 @@ const C = Object.freeze({
   ...(window.FITLYNE_CONFIG || {})
 });
 
-// Valores públicos fixos para impedir que cache antigo volte a usar v_NAME.
+// Valores públicos fixos para impedir que configurações antigas voltem pelo cache.
 const FITLYNE_API_URL = "https://script.google.com/macros/s/AKfycbzt2uOHVX45xliautKbyBgBAhgFu-ruNj9CjUa2zJbEPtaOfA7Uy55oc6g_-bKGuh-gRg/exec";
 const FITLYNE_CLOUD_NAME = "v9gfcyqm";
 const FITLYNE_UPLOAD_PRESET = "fitlyne_upload";
-console.info("FITLYNE app-v4 ativo", { api: FITLYNE_API_URL, cloud: FITLYNE_CLOUD_NAME, preset: FITLYNE_UPLOAD_PRESET });
+console.info("FITLYNE app-v7 ativo — upload via Apps Script", { api: FITLYNE_API_URL, cloud: FITLYNE_CLOUD_NAME, preset: FITLYNE_UPLOAD_PRESET });
 
 const state = {
   token: sessionStorage.getItem("fitlyneToken") || "",
@@ -75,7 +75,36 @@ async function api(action, payload={}, auth=true){
   if (!res.ok || !data.ok) throw new Error(data.error || `Erro na API (HTTP ${res.status})`);
   return data.data;
 }
+function isAuthenticated(){
+  return Boolean(state.token);
+}
+function setAuthenticatedUI(authenticated){
+  const menuBtn=$("#menuBtn");
+  const drawer=$("#drawer");
+  const backdrop=$("#backdrop");
+
+  document.body.classList.toggle("authenticated",authenticated);
+  document.body.classList.toggle("guest",!authenticated);
+
+  menuBtn.hidden=!authenticated;
+  menuBtn.disabled=!authenticated;
+  menuBtn.setAttribute("aria-expanded","false");
+  drawer.hidden=!authenticated;
+  drawer.setAttribute("aria-hidden",authenticated?"false":"true");
+  backdrop.hidden=!authenticated;
+
+  if(!authenticated) closeDrawer();
+}
 function showView(name){
+  const protectedView=name!=="login";
+  if(protectedView&&!isAuthenticated()){
+    state.view="login";
+    $$(".view").forEach(v=>v.classList.remove("active"));
+    $("#loginView")?.classList.add("active");
+    setAuthenticatedUI(false);
+    return;
+  }
+
   state.view=name;
   $$(".view").forEach(v=>v.classList.remove("active"));
   const el=$(`#${name}View`);
@@ -85,16 +114,46 @@ function showView(name){
   if(name==="dashboard") renderDashboard();
   window.scrollTo({top:0,behavior:"smooth"});
 }
-function openDrawer(){ $("#drawer").classList.add("open"); $("#backdrop").classList.add("open"); }
-function closeDrawer(){ $("#drawer").classList.remove("open"); $("#backdrop").classList.remove("open"); }
+function openDrawer(){
+  if(!isAuthenticated()){
+    setAuthenticatedUI(false);
+    showView("login");
+    return;
+  }
+  const drawer=$("#drawer");
+  const backdrop=$("#backdrop");
+  drawer.hidden=false;
+  backdrop.hidden=false;
+  drawer.classList.add("open");
+  backdrop.classList.add("open");
+  drawer.setAttribute("aria-hidden","false");
+  $("#menuBtn").setAttribute("aria-expanded","true");
+}
+function closeDrawer(){
+  const drawer=$("#drawer");
+  const backdrop=$("#backdrop");
+  if(!drawer||!backdrop) return;
+  drawer.classList.remove("open");
+  backdrop.classList.remove("open");
+  $("#menuBtn")?.setAttribute("aria-expanded","false");
+  if(!isAuthenticated()){
+    drawer.hidden=true;
+    backdrop.hidden=true;
+    drawer.setAttribute("aria-hidden","true");
+  }
+}
 
 async function login(){
   const pin=$("#pinInput").value.trim();
   if(!pin) return toast("Digite o PIN");
   try{
     const data=await api("login",{pin},false);
-    state.token=data.token; sessionStorage.setItem("fitlyneToken",data.token);
-    await loadAll(); showView("dashboard"); toast("Bem-vindo!");
+    state.token=data.token;
+    sessionStorage.setItem("fitlyneToken",data.token);
+    await loadAll();
+    setAuthenticatedUI(true);
+    showView("dashboard");
+    toast("Bem-vindo!");
   }catch(e){ toast(e.message); }
 }
 async function loadAll(){
@@ -104,7 +163,13 @@ async function loadAll(){
   $("#brandSubtitle").textContent=state.config.SUBTITULO || C.STORE_SUBTITLE || "Moda Fitness & Makeup";
   populateProductSelects();
 }
-function logout(){ sessionStorage.removeItem("fitlyneToken"); state.token=""; showView("login"); }
+function logout(){
+  sessionStorage.removeItem("fitlyneToken");
+  state.token="";
+  setAuthenticatedUI(false);
+  showView("login");
+  window.setTimeout(()=>$("#pinInput")?.focus(),0);
+}
 
 function renderDashboard(){
   const active=state.products.filter(p=>String(p.ATIVO).toUpperCase()==="SIM");
@@ -182,65 +247,89 @@ function previewFiles(files){
     $("#photoPreview").appendChild(div);
   });
 }
-async function uploadImage(file, productId, index) {
-  const cloudName = FITLYNE_CLOUD_NAME;
-  const uploadPreset = FITLYNE_UPLOAD_PRESET;
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Não foi possível ler a foto selecionada."));
+    reader.readAsDataURL(file);
+  });
+}
 
-  if (!cloudName || !uploadPreset) {
-    throw new Error("Configure o Cloudinary em fitlyne-config.js");
-  }
+function loadImageElement(source) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("A foto não pôde ser aberta pelo navegador."));
+    image.src = source;
+  });
+}
 
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("Não foi possível preparar a foto para envio."));
+    }, type, quality);
+  });
+}
+
+async function prepareImageForUpload(file) {
   if (!file || !String(file.type || "").startsWith("image/")) {
     throw new Error("Selecione um arquivo de imagem válido.");
   }
 
-  const maxBytes = 10 * 1024 * 1024;
-  if (Number(file.size || 0) > maxBytes) {
-    throw new Error("A foto deve ter no máximo 10 MB.");
+  const originalLimit = 20 * 1024 * 1024;
+  if (Number(file.size || 0) > originalLimit) {
+    throw new Error("A foto original deve ter no máximo 20 MB.");
   }
 
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("upload_preset", uploadPreset);
+  const source = await readFileAsDataUrl(file);
+  const image = await loadImageElement(source);
+  const maxWidth = 1600;
+  const maxHeight = 2000;
+  const scale = Math.min(1, maxWidth / image.naturalWidth, maxHeight / image.naturalHeight);
+  const width = Math.max(1, Math.round(image.naturalWidth * scale));
+  const height = Math.max(1, Math.round(image.naturalHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { alpha: false });
+  if (!context) throw new Error("O navegador não conseguiu processar a foto.");
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, height);
+  context.drawImage(image, 0, 0, width, height);
 
-  const endpoint = "https://api.cloudinary.com/v1_1/v9gfcyqm/image/upload";
-  console.info("Enviando imagem para:", endpoint, "preset:", uploadPreset);
+  const blob = await canvasToBlob(canvas, "image/jpeg", 0.84);
+  const dataUrl = await readFileAsDataUrl(blob);
+  const comma = dataUrl.indexOf(",");
+  const base64 = comma >= 0 ? dataUrl.slice(comma + 1) : "";
+  if (!base64) throw new Error("A foto ficou vazia durante a preparação.");
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    body: formData,
-    mode: "cors",
-    cache: "no-store"
+  return {
+    base64,
+    mimeType: "image/jpeg",
+    fileName: String(file.name || "foto.jpg").replace(/\.[^.]+$/, "") + ".jpg"
+  };
+}
+
+async function uploadImage(file, productId, index) {
+  const prepared = await prepareImageForUpload(file);
+  console.info("Enviando foto pelo Apps Script", {
+    arquivo: prepared.fileName,
+    tamanhoBase64: prepared.base64.length
   });
 
-  const raw = await response.text();
-  let result = {};
-
-  try {
-    result = raw ? JSON.parse(raw) : {};
-  } catch (error) {
-    result = {};
+  const result = await api("uploadImage", prepared);
+  if (!result || !result.secure_url || !result.public_id) {
+    throw new Error("A API não devolveu os dados da foto enviada.");
   }
 
-  if (!response.ok || !result.secure_url || !result.public_id) {
-    const cloudinaryMessage = result?.error?.message || "";
-    const configurationHint = response.status === 401
-      ? ` Confira se o preset "${uploadPreset}" existe e está como Unsigned no Cloudinary.`
-      : "";
-
-    const technicalDetail = raw ? ` Resposta: ${raw.slice(0, 500)}` : "";
-    throw new Error(
-      cloudinaryMessage
-        ? `Cloudinary HTTP ${response.status}: ${cloudinaryMessage}.${configurationHint}${technicalDetail}`
-        : `Falha ao enviar a foto (HTTP ${response.status}).${configurationHint}${technicalDetail}`
-    );
-  }
-
+  const cloudName = String(result.cloud_name || FITLYNE_CLOUD_NAME);
   const publicId = String(result.public_id);
   const format = String(result.format || "jpg");
   const version = result.version ? `v${result.version}/` : "";
   const deliveryBase = `https://res.cloudinary.com/${encodeURIComponent(cloudName)}/image/upload/`;
-
   const overlay = C.CLOUDINARY_WATERMARK_PUBLIC_ID
     ? `l_${String(C.CLOUDINARY_WATERMARK_PUBLIC_ID).replaceAll("/", ":")},o_35,g_south_east,w_0.28,fl_relative,fl_layer_apply/`
     : "";
@@ -314,8 +403,24 @@ function renderFinance(){
 }
 
 function bind(){
-  $("#menuBtn").onclick=openDrawer; $("#closeDrawer").onclick=closeDrawer; $("#backdrop").onclick=closeDrawer; $("#loginBtn").onclick=login; $("#logoutBtn").onclick=logout;
-  $$("[data-view]").forEach(b=>b.onclick=()=>{if(b.dataset.view==="productForm")resetProductForm();showView(b.dataset.view); if(b.dataset.view==="stock")renderMovements(); if(b.dataset.view==="sales")renderSales(); if(b.dataset.view==="clients")renderClients(); if(b.dataset.view==="finance")renderFinance();});
+  $("#menuBtn").onclick=openDrawer;
+  $("#closeDrawer").onclick=closeDrawer;
+  $("#backdrop").onclick=closeDrawer;
+  $("#loginBtn").onclick=login;
+  $("#pinInput").addEventListener("keydown",event=>{if(event.key==="Enter")login()});
+  $("#logoutBtn").onclick=logout;
+  $$("[data-view]").forEach(b=>b.onclick=()=>{
+    if(!isAuthenticated()){
+      showView("login");
+      return;
+    }
+    if(b.dataset.view==="productForm")resetProductForm();
+    showView(b.dataset.view);
+    if(b.dataset.view==="stock")renderMovements();
+    if(b.dataset.view==="sales")renderSales();
+    if(b.dataset.view==="clients")renderClients();
+    if(b.dataset.view==="finance")renderFinance();
+  });
   $$('input[name="sizeMode"]').forEach(r=>r.onchange=toggleSizeMode);
   $("#addCustomSize").onclick=()=>{const s=prompt("Digite o tamanho, por exemplo 38-44");if(s)addSizeChip(s)};
   $("#photoInput").onchange=e=>previewFiles(e.target.files); $("#productForm").onsubmit=saveProduct; $("#cancelProduct").onclick=()=>{resetProductForm();showView("products")};
@@ -324,6 +429,9 @@ function bind(){
 async function init() {
   bind();
   resetProductForm();
+  setAuthenticatedUI(false);
+  showView("login");
+  window.setTimeout(()=>$("#pinInput")?.focus(),0);
 
   if ("serviceWorker" in navigator) {
     try {
@@ -352,6 +460,7 @@ async function init() {
   if (state.token) {
     try {
       await loadAll();
+      setAuthenticatedUI(true);
       showView("dashboard");
     } catch (error) {
       logout();

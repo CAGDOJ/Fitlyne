@@ -31,3 +31,43 @@ dialog{width:min(94vw,650px);border:0;border-radius:22px;padding:0;box-shadow:0 
 .camera-button{background:#f3f3f3;border-color:#bdbdbd}
 .badge{background:#f1f1f1;color:#222}
 @media(max-width:620px){.quick-grid{grid-template-columns:1fr}.catalog-link{font-size:.8rem;padding:8px 10px}}
+
+
+/* V5 — menu administrativo somente após autenticação */
+[hidden]{display:none!important}
+.topbar-spacer{width:44px;height:44px;display:block;flex:0 0 44px}
+body:not(.authenticated) #menuBtn,body:not(.authenticated) #drawer,body:not(.authenticated) #backdrop{display:none!important}
+body:not(.authenticated) .topbar{grid-template-columns:44px 1fr 44px}
+
+
+/* V6 — tela de login móvel corrigida e área administrativa protegida */
+body.guest .topbar{display:none!important}
+body.guest main{max-width:none;margin:0;padding:0}
+body.guest #loginView.center-view{min-height:100vh;min-height:100svh;padding:max(22px,env(safe-area-inset-top)) 20px max(22px,env(safe-area-inset-bottom));align-items:center;justify-items:center}
+body.guest #loginView.center-view.active{display:grid}
+body.guest .login-card{width:min(100%,420px);margin:0;padding:26px 22px;border-radius:26px}
+body.guest .login-card label{text-align:left;margin-top:22px}
+body.authenticated .topbar{display:flex}
+body.authenticated main{padding-top:18px}
+.quick-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+
+@media(max-width:620px){
+  body.guest #loginView.center-view{padding-left:16px;padding-right:16px}
+  body.guest .login-card{padding:24px 18px}
+  body.guest .logo-circle{width:68px;height:68px;border-radius:22px;font-size:1.75rem;margin-bottom:10px}
+  body.guest .login-card h1{font-size:1.72rem;margin:8px 0 4px}
+  body.guest .login-card p{margin:0 0 18px}
+  body.guest .login-card label{margin-top:14px}
+  body.guest .login-card input{padding:12px}
+  body.guest .login-card button{padding:12px 15px}
+  .quick-grid{grid-template-columns:1fr}
+}
+
+@media(max-height:560px){
+  body.guest #loginView.center-view{align-items:start;padding-top:14px;padding-bottom:14px}
+  body.guest .login-card{padding-top:18px;padding-bottom:18px}
+  body.guest .logo-circle{width:58px;height:58px;border-radius:19px;font-size:1.5rem;margin-bottom:6px}
+  body.guest .login-card h1{font-size:1.45rem;margin:4px 0 2px}
+  body.guest .login-card p{margin:0 0 10px}
+  body.guest .login-card label{margin-top:10px}
+}

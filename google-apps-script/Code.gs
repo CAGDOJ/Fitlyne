@@ -30,7 +30,7 @@ function doPost(e){
     if(action==="login") return json({ok:true,data:login(payload.pin)});
     if(action==="publicCatalog") return json({ok:true,data:publicCatalog()});
     if(!validateToken(req.token)) throw new Error("Sessão inválida. Entre novamente.");
-    const handlers={bootstrap,saveProduct,deleteProduct,stockMovement,saveSale,saveExpense};
+    const handlers={bootstrap,uploadImage,saveProduct,deleteProduct,stockMovement,saveSale,saveExpense};
     if(!handlers[action]) throw new Error("Ação inválida");
     return json({ok:true,data:handlers[action](payload)});
   }catch(err){return json({ok:false,error:String(err.message||err)})}
@@ -51,6 +51,43 @@ function bootstrap(){
   return {products:readSheet("PRODUTOS"),photos:readSheet("FOTOS"),movements:readSheet("MOVIMENTACOES").reverse(),sales:readSheet("VENDAS").reverse(),clients:readSheet("CLIENTES"),expenses:readSheet("DESPESAS").reverse(),config:cfg()};
 }
 function publicCatalog(){return {products:readSheet("PRODUTOS").filter(p=>p.ATIVO==="SIM"),photos:readSheet("FOTOS"),config:cfg()}}
+function uploadImage(payload){
+  const CLOUD_NAME="v9gfcyqm";
+  const UPLOAD_PRESET="fitlyne_upload";
+  const mime=String(payload.mimeType||"image/jpeg");
+  const fileName=String(payload.fileName||"foto.jpg").replace(/[^a-zA-Z0-9._-]/g,"_");
+  const base64=String(payload.base64||"");
+  if(!base64) throw new Error("A foto não chegou à API.");
+  if(!/^image\//i.test(mime)) throw new Error("O arquivo recebido não é uma imagem.");
+
+  let bytes;
+  try{bytes=Utilities.base64Decode(base64)}catch(error){throw new Error("A foto chegou corrompida à API.")}
+  if(!bytes||!bytes.length) throw new Error("A foto recebida está vazia.");
+  if(bytes.length>6*1024*1024) throw new Error("A foto processada ultrapassou 6 MB.");
+
+  const blob=Utilities.newBlob(bytes,mime,fileName);
+  const endpoint=`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`;
+  const response=UrlFetchApp.fetch(endpoint,{
+    method:"post",
+    payload:{file:blob,upload_preset:UPLOAD_PRESET},
+    muteHttpExceptions:true
+  });
+  const status=response.getResponseCode();
+  const raw=response.getContentText();
+  let data={};
+  try{data=JSON.parse(raw||"{}")}catch(error){}
+  if(status<200||status>=300||!data.secure_url||!data.public_id){
+    const detail=data&&data.error&&data.error.message?data.error.message:raw.slice(0,400);
+    throw new Error(`Cloudinary recusou a foto (HTTP ${status}): ${detail||"sem detalhes"}`);
+  }
+  return {
+    cloud_name:CLOUD_NAME,
+    secure_url:data.secure_url,
+    public_id:data.public_id,
+    format:data.format||"jpg",
+    version:data.version||""
+  };
+}
 function saveProduct(payload){
   const p=payload.product, now=new Date();
   const sh=sheet("PRODUTOS"), idx=findRow("PRODUTOS","ID",p.ID);

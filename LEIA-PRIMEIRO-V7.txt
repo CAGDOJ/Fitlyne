@@ -1,0 +1,21 @@
+FITLYNE V7 — FOTO CORRIGIDA PELO SERVIDOR
+
+O upload agora NÃO é mais enviado do navegador direto ao Cloudinary.
+A foto é reduzida no navegador, enviada ao Google Apps Script e o Apps Script envia ao Cloudinary.
+Isso contorna bloqueios/extensões/CORS e mostra o erro real quando o Cloudinary recusar.
+
+PASSOS OBRIGATÓRIOS:
+1. Abra o projeto Google Apps Script vinculado à planilha Fitlyne.
+2. Substitua TODO o Code.gs pelo arquivo google-apps-script/Code.gs deste pacote.
+3. Clique em Implantar > Gerenciar implantações > lápis/Editar.
+4. Em Versão, escolha Nova versão e clique em Implantar.
+5. Mantenha: Executar como você / acesso para qualquer pessoa.
+6. No GitHub, apague os arquivos antigos e envie o CONTEÚDO desta pasta Fitlyne para a raiz.
+7. Aguarde o GitHub Pages e pressione Ctrl+Shift+R.
+
+CONFIRMAÇÃO NO CONSOLE:
+FITLYNE carregada: 2026-07-30-2355-v7
+FITLYNE app-v7 ativo — upload via Apps Script
+
+A mensagem “A listener indicated an asynchronous response...” vem de extensão do Chrome,
+não do site. Teste em janela anônima para removê-la. O favicon 404 foi corrigido.
