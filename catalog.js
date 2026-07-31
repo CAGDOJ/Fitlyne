@@ -56,7 +56,7 @@ function productPhoto(productId) {
 
 async function load() {
   if (!C.API_URL || C.API_URL.includes("COLE_AQUI")) {
-    throw new Error("Configure a URL da API no arquivo config.js.");
+    throw new Error("Configure a URL da API no arquivo fitlyne-config.js.");
   }
 
   const response = await fetch(C.API_URL, {

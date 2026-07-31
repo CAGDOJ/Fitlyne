@@ -1,0 +1,40 @@
+FITLYNE — ATUALIZAÇÃO FINAL PARA PUBLICAR PRODUTOS
+
+1. GITHUB PAGES
+- Substitua os arquivos do site pelos arquivos desta pasta.
+- O arquivo fitlyne-config.js já está configurado com:
+  CLOUDINARY_CLOUD_NAME = v9gfcyqm
+  CLOUDINARY_UPLOAD_PRESET = fitlyne_upload
+- Não coloque API Key, API Secret nem CLOUDINARY_URL no GitHub.
+
+2. CLOUDINARY
+- Abra Settings > Upload > Upload presets.
+- Crie ou edite o preset com o nome exato: fitlyne_upload
+- Signing mode: Unsigned
+- Salve.
+- Como uma chave secreta foi compartilhada anteriormente, gere uma nova credencial e desative a antiga.
+
+3. GOOGLE APPS SCRIPT
+- Abra o projeto do Apps Script ligado à planilha.
+- Substitua todo o Code.gs pelo arquivo google-apps-script/Code.gs desta versão.
+- Execute setupSystem uma vez e autorize o acesso.
+- Em Implantar > Gerenciar implantações, edite a implantação Web App e selecione Nova versão.
+- Executar como: você.
+- Quem tem acesso: qualquer pessoa.
+- Confirme se a URL /exec continua sendo a mesma configurada no fitlyne-config.js.
+
+4. TESTE
+- Abra o site usando Ctrl + Shift + R.
+- Entre no painel.
+- Cadastre um produto com uma imagem JPG ou PNG menor que 10 MB.
+- Clique em Salvar e publicar.
+- A requisição deve usar:
+  https://api.cloudinary.com/v1_1/v9gfcyqm/image/upload
+
+CORREÇÕES INCLUÍDAS
+- Removido o endereço incorreto /v_NAME/ e a propriedade inexistente C.v9gfcyqm.
+- Configuração centralizada em fitlyne-config.js.
+- Correção do Google Apps Script ao salvar o primeiro produto/foto em planilhas vazias.
+- Tratamento claro de erro 401 do Cloudinary.
+- Validação de imagem e limite de 10 MB.
+- Cache dos scripts atualizado.

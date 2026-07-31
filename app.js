@@ -1,5 +1,6 @@
 "use strict";
-const C = Object.freeze(window.FITLYNE_CONFIG || {});
+
+const C = Object.freeze({ ...(window.FITLYNE_CONFIG || {}) });
 
 const state = {
   token: sessionStorage.getItem("fitlyneToken") || "",
@@ -42,7 +43,7 @@ function toast(message) {
 }
 
 async function api(action, payload={}, auth=true){
-  if(!C.API_URL || C.API_URL.includes("COLE_AQUI")) throw new Error("Configure API_URL em config.js");
+  if(!C.API_URL || C.API_URL.includes("COLE_AQUI")) throw new Error("Configure API_URL em fitlyne-config.js");
   const body = {action,payload,token: auth ? state.token : ""};
   const res = await fetch(C.API_URL, {
     method: "POST",
@@ -167,25 +168,83 @@ function previewFiles(files){
     $("#photoPreview").appendChild(div);
   });
 }
-async function uploadImage(file, productId, index){
-  if(!C.CLOUDINARY_CLOUD_NAME||!C.CLOUDINARY_UPLOAD_PRESET) throw new Error("Configure o Cloudinary em config.js");
-  const fd=new FormData(); fd.append("file",file); fd.append("upload_preset",C.CLOUDINARY_UPLOAD_PRESET); fd.append("folder",`fitlyne/produtos/${productId}`);
-  const res=await fetch(`https://api.cloudinary.com/v1_1/${C.CLOUDINARY_CLOUD_NAME}/image/upload`,{method:"POST",body:fd});
-  const raw = await res.text();
-  let d;
-  try { d = JSON.parse(raw); } catch (error) { d = {}; }
-  if (!res.ok) {
-    throw new Error(d?.error?.message ? `Cloudinary: ${d.error.message}` : `Falha ao enviar foto (HTTP ${res.status})`);
+async function uploadImage(file, productId, index) {
+  const cloudName = String(C.CLOUDINARY_CLOUD_NAME || "").trim();
+  const uploadPreset = String(C.CLOUDINARY_UPLOAD_PRESET || "").trim();
+
+  if (!cloudName || !uploadPreset) {
+    throw new Error("Configure o Cloudinary em fitlyne-config.js");
   }
-  const base=`https://res.cloudinary.com/${C.CLOUDINARY_CLOUD_NAME}/image/upload/`;
-  const overlay=C.CLOUDINARY_WATERMARK_PUBLIC_ID?`l_${C.CLOUDINARY_WATERMARK_PUBLIC_ID.replaceAll("/","%3A")},o_35,g_south_east,w_0.28,fl_relative/`:"";
-  const make=(w,h,crop="fill")=>`${base}f_auto,q_auto:good,c_${crop},w_${w},h_${h}/${overlay}${d.public_id}.${d.format}`;
+
+  if (!file || !String(file.type || "").startsWith("image/")) {
+    throw new Error("Selecione um arquivo de imagem válido.");
+  }
+
+  const maxBytes = 10 * 1024 * 1024;
+  if (Number(file.size || 0) > maxBytes) {
+    throw new Error("A foto deve ter no máximo 10 MB.");
+  }
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", uploadPreset);
+
+  const endpoint = `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloudName)}/image/upload`;
+  const response = await fetch(endpoint, {
+    method: "POST",
+    body: formData
+  });
+
+  const raw = await response.text();
+  let result = {};
+
+  try {
+    result = raw ? JSON.parse(raw) : {};
+  } catch (error) {
+    result = {};
+  }
+
+  if (!response.ok || !result.secure_url || !result.public_id) {
+    const cloudinaryMessage = result?.error?.message || "";
+    const configurationHint = response.status === 401
+      ? ` Confira se o preset "${uploadPreset}" existe e está como Unsigned no Cloudinary.`
+      : "";
+
+    throw new Error(
+      cloudinaryMessage
+        ? `Cloudinary: ${cloudinaryMessage}.${configurationHint}`
+        : `Falha ao enviar a foto (HTTP ${response.status}).${configurationHint}`
+    );
+  }
+
+  const publicId = String(result.public_id);
+  const format = String(result.format || "jpg");
+  const version = result.version ? `v${result.version}/` : "";
+  const deliveryBase = `https://res.cloudinary.com/${encodeURIComponent(cloudName)}/image/upload/`;
+
+  const overlay = C.CLOUDINARY_WATERMARK_PUBLIC_ID
+    ? `l_${String(C.CLOUDINARY_WATERMARK_PUBLIC_ID).replaceAll("/", ":")},o_35,g_south_east,w_0.28,fl_relative,fl_layer_apply/`
+    : "";
+
+  const makeUrl = (width, height, crop = "fill") => {
+    const transformation = `f_auto,q_auto:good,c_${crop},w_${width},h_${height}/${overlay}`;
+    return `${deliveryBase}${transformation}${version}${publicId}.${format}`;
+  };
+
   return {
-    ID:uid("FOTO"),ID_PRODUTO:productId,ORDEM:index+1,PRINCIPAL:index===0?"SIM":"NAO",
-    PUBLIC_ID:d.public_id,URL_ORIGINAL:d.secure_url,
-    URL_CATALOGO:make(1600,2000),URL_FEED:make(1080,1350),URL_STORY:make(1080,1920),
-    URL_WHATSAPP:make(1080,1350),URL_FACEBOOK:make(1200,1500),URL_SHOPEE:make(1200,1200,"pad"),
-    URL_MERCADO_LIVRE:make(1200,1200,"pad")
+    ID: uid("FOTO"),
+    ID_PRODUTO: productId,
+    ORDEM: index + 1,
+    PRINCIPAL: index === 0 ? "SIM" : "NAO",
+    PUBLIC_ID: publicId,
+    URL_ORIGINAL: result.secure_url,
+    URL_CATALOGO: makeUrl(1600, 2000),
+    URL_FEED: makeUrl(1080, 1350),
+    URL_STORY: makeUrl(1080, 1920),
+    URL_WHATSAPP: makeUrl(1080, 1350),
+    URL_FACEBOOK: makeUrl(1200, 1500),
+    URL_SHOPEE: makeUrl(1200, 1200, "pad"),
+    URL_MERCADO_LIVRE: makeUrl(1200, 1200, "pad")
   };
 }
 async function saveProduct(e){

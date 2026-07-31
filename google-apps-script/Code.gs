@@ -41,7 +41,8 @@ function cfg(){
 }
 function login(pin){
   const c=cfg(); if(String(pin)!==String(c.ADMIN_PIN)) throw new Error("PIN incorreto");
-  const token=Utilities.getUuid(); const ttl=Number(c.TOKEN_TTL_HORAS||24)*3600;
+  const token=Utilities.getUuid(); const requestedTtl=Number(c.TOKEN_TTL_HORAS||6)*3600;
+  const ttl=Math.max(60,Math.min(requestedTtl,21600));
   CacheService.getScriptCache().put("TOKEN_"+token,"1",ttl);
   return {token};
 }
@@ -106,8 +107,16 @@ function rowObject(name,row){
   return Object.fromEntries(h.map((k,i)=>[k,v[i]]));
 }
 function findRow(name,key,value){
-  const sh=sheet(name), h=sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0], col=h.indexOf(key)+1;if(!col)return 0;
-  const vals=sh.getRange(2,col,Math.max(0,sh.getLastRow()-1),1).getValues().flat();const i=vals.findIndex(v=>String(v)===String(value));return i<0?0:i+2;
+  const sh=sheet(name);
+  const lastRow=sh.getLastRow();
+  const lastColumn=sh.getLastColumn();
+  if(lastRow<2||lastColumn<1)return 0;
+  const h=sh.getRange(1,1,1,lastColumn).getValues()[0];
+  const col=h.indexOf(key)+1;
+  if(!col)return 0;
+  const vals=sh.getRange(2,col,lastRow-1,1).getValues().flat();
+  const i=vals.findIndex(v=>String(v)===String(value));
+  return i<0?0:i+2;
 }
 function appendObject(name,obj){
   const sh=sheet(name), h=sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0];sh.appendRow(h.map(k=>obj[k]??""));

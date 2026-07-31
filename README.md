@@ -109,7 +109,7 @@ config.example.js
 para:
 
 ```text
-config.js
+fitlyne-config.js
 ```
 
 Preencha:
@@ -117,9 +117,9 @@ Preencha:
 ```javascript
 window.FITLYNE_CONFIG = {
   API_URL: "URL_DO_APPS_SCRIPT",
-  CLOUDINARY_CLOUD_NAME: "SEU_CLOUD_NAME",
-  CLOUDINARY_UPLOAD_PRESET: "SEU_UNSIGNED_PRESET",
-  CLOUDINARY_WATERMARK_PUBLIC_ID: "fitlyne/logo",
+  CLOUDINARY_CLOUD_NAME: "v9gfcyqm",
+  CLOUDINARY_UPLOAD_PRESET: "fitlyne_upload",
+  CLOUDINARY_WATERMARK_PUBLIC_ID: "",
   STORE_NAME: "FITLYNE",
   STORE_SUBTITLE: "Moda Fitness & Makeup"
 };
@@ -148,7 +148,7 @@ No repositório:
 Settings → Pages → Deploy from a branch → main / root
 ```
 
-O arquivo `config.js` contém somente dados públicos do frontend. Nunca coloque API Secret do Cloudinary nele.
+O arquivo `fitlyne-config.js` contém somente dados públicos do frontend. Nunca coloque API Secret do Cloudinary nele.
 
 ## 8. Abrir como aplicativo no celular
 
