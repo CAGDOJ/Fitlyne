@@ -9,7 +9,7 @@ const SHEETS = {
   DESPESAS: ["ID", "DATA", "DESCRICAO", "CATEGORIA", "VALOR"]
 };
 
-const PUBLIC_CACHE_KEY = "FITLYNE_PUBLIC_CATALOG_V13";
+const PUBLIC_CACHE_KEY = "FITLYNE_PUBLIC_CATALOG_V15";
 const VALID_CATALOG_STATUS = ["AUTOMATICO", "DISPONIVEL", "ESGOTADO", "REPOSICAO"];
 
 function setupSystem() {
@@ -20,7 +20,8 @@ function setupSystem() {
   setDefaultConfig_("SUBTITULO", "Moda Fitness & Makeup");
   setDefaultConfig_("TOKEN_TTL_HORAS", "6");
   clearPublicCache_();
-  return "Sistema FITLYNE atualizado com sucesso.";
+  migrateLegacyProducts_();
+  return "Sistema FITLYNE V15 atualizado com sucesso.";
 }
 
 function ensureSystem_() {
@@ -52,7 +53,7 @@ function ensureProductStatusColumn_() {
 
 function doGet() {
   ensureProductStatusColumn_();
-  return json_({ ok: true, data: { name: "FITLYNE API", version: "v13" } });
+  return json_({ ok: true, data: { name: "FITLYNE API", version: "v15" } });
 }
 
 function doPost(e) {
@@ -138,6 +139,28 @@ function sameId_(left, right) {
   return String(left == null ? "" : left).trim() === String(right == null ? "" : right).trim();
 }
 
+function isProductActive_(product) {
+  const value = String(product && product.ATIVO != null ? product.ATIVO : "").trim().toUpperCase();
+  // Compatibilidade com produtos cadastrados em versões antigas: vazio significa publicado.
+  return ["NAO", "NÃO", "FALSE", "0", "INATIVO", "OCULTO"].indexOf(value) < 0;
+}
+
+function migrateLegacyProducts_() {
+  readSheet_("PRODUTOS").forEach(function(product) {
+    let changed = false;
+    if (!String(product.ATIVO == null ? "" : product.ATIVO).trim()) {
+      product.ATIVO = "SIM";
+      changed = true;
+    }
+    if (!String(product.STATUS_CATALOGO == null ? "" : product.STATUS_CATALOGO).trim()) {
+      product.STATUS_CATALOGO = "AUTOMATICO";
+      changed = true;
+    }
+    if (changed && product.ID) upsert_("PRODUTOS", "ID", product);
+  });
+  clearPublicCache_();
+}
+
 function catalogStatus_(product) {
   let status = String(product.STATUS_CATALOGO || "AUTOMATICO").toUpperCase();
   if (VALID_CATALOG_STATUS.indexOf(status) < 0) status = "AUTOMATICO";
@@ -162,7 +185,7 @@ function publicProduct_(product) {
     PRECO_VENDA: product.PRECO_VENDA,
     STATUS_CATALOGO: status,
     DISPONIVEL: status === "DISPONIVEL",
-    ATIVO: product.ATIVO
+    ATIVO: isProductActive_(product) ? "SIM" : "NAO"
   };
 }
 
@@ -174,7 +197,7 @@ function publicCatalog_() {
   }
   const allConfig = config_();
   const publicProducts = readSheet_("PRODUTOS").filter(function(product) {
-    return String(product.ATIVO).toUpperCase() === "SIM";
+    return isProductActive_(product);
   }).map(publicProduct_);
   const publicIds = {};
   publicProducts.forEach(function(product) { publicIds[String(product.ID == null ? "" : product.ID).trim()] = true; });
@@ -261,6 +284,7 @@ function saveProduct_(payload) {
   let status = String(product.STATUS_CATALOGO || "AUTOMATICO").toUpperCase();
   if (VALID_CATALOG_STATUS.indexOf(status) < 0) status = "AUTOMATICO";
   product.STATUS_CATALOGO = status;
+  product.ATIVO = isProductActive_(product) ? "SIM" : "NAO";
   const now = new Date();
   const row = findRow_("PRODUTOS", "ID", product.ID);
   const current = row ? rowObject_("PRODUTOS", row) : null;

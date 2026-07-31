@@ -1,16 +1,22 @@
 "use strict";
 
-const C = Object.freeze({
-  API_URL: "https://script.google.com/macros/s/AKfycbzt2uOHVX45xliautKbyBgBAhgFu-ruNj9CjUa2zJbEPtaOfA7Uy55oc6g_-bKGuh-gRg/exec",
-  STORE_NAME: "FITLYNE",
-  STORE_SUBTITLE: "Moda Fitness & Makeup",
-  BUILD: "2026-07-31-0115-v13",
-  ...(window.FITLYNE_CONFIG || {})
-});
-const FITLYNE_API_URL = C.API_URL;
-console.info("FITLYNE catalog-v13 ativo", { build: C.BUILD, api: FITLYNE_API_URL });
+const C = window.FITLYNE_CONFIG;
 
-const CACHE_KEY = "fitlynePublicCatalogV13";
+if (!C || !String(C.API_URL || "").startsWith("https://script.google.com/macros/s/")) {
+  throw new Error("Configuração inválida. Edite somente o arquivo fitlyne-config.js.");
+}
+
+const FITLYNE_API_URL = C.API_URL;
+const CACHE_KEY = `fitlynePublicCatalog:${C.BUILD || "v15"}`;
+console.info("FITLYNE catalog-v15 ativo", { build: C.BUILD, api: FITLYNE_API_URL });
+window.FITLYNE_DIAGNOSTICO = () => ({
+  build: C.BUILD,
+  api: C.API_URL,
+  cloudinary: C.CLOUDINARY_CLOUD_NAME,
+  preset: C.CLOUDINARY_UPLOAD_PRESET,
+  app: "catalog-v15"
+});
+
 const state = {
   products: [],
   photos: [],
@@ -101,6 +107,8 @@ function applyData(data) {
 
 function readCachedCatalog() {
   try {
+    // Limpa caches antigos que poderiam manter o catálogo vazio após uma atualização.
+    Object.keys(localStorage).filter((key) => key.startsWith("fitlynePublicCatalog:") && key !== CACHE_KEY).forEach((key) => localStorage.removeItem(key));
     const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
     if (cached?.data) applyData(cached.data);
     return Boolean(cached?.data);

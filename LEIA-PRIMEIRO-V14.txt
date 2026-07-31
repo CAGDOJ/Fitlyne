@@ -1,0 +1,18 @@
+FITLYNE V14 — CONFIGURAÇÃO EM UM ÚNICO ARQUIVO
+
+A partir desta versão, o endereço do Google Apps Script, Cloudinary e nome da loja ficam apenas em:
+
+fitlyne-config.js
+
+app.js e catalog.js não possuem mais cópias da URL.
+O bootstrap.js busca a configuração sem cache antes de abrir o painel ou catálogo.
+
+PARA PUBLICAR:
+1. Envie todos os arquivos desta pasta para a raiz do GitHub na primeira instalação da V14.
+2. Nas próximas trocas de implantação, envie somente fitlyne-config.js.
+3. Não é necessário editar app.js, catalog.js, index.html ou catalog.html para trocar a URL.
+
+TESTE NO CONSOLE:
+FITLYNE_DIAGNOSTICO()
+
+Deve mostrar app v14 e a URL atual da API.

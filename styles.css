@@ -115,3 +115,17 @@ button:disabled{cursor:not-allowed;opacity:.58}
 .product-card .product-image{display:block}
 .card-actions button{cursor:pointer}
 @media(max-width:520px){.drawer{width:min(86vw,330px)}.drawer nav button,.drawer nav .drawer-link{min-height:50px}}
+
+/* V15: indicação clara de publicação no catálogo */
+.publication-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+}
+.publication-badge.published { background: #e8f7ec; color: #126b2e; }
+.publication-badge.hidden-product { background: #f2f2f2; color: #666; }

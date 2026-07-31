@@ -1,18 +1,20 @@
 "use strict";
 
-const C = Object.freeze({
-  API_URL: "https://script.google.com/macros/s/AKfycbzt2uOHVX45xliautKbyBgBAhgFu-ruNj9CjUa2zJbEPtaOfA7Uy55oc6g_-bKGuh-gRg/exec",
-  CLOUDINARY_CLOUD_NAME: "v9gfcyqm",
-  CLOUDINARY_UPLOAD_PRESET: "fitlyne_upload",
-  CLOUDINARY_WATERMARK_PUBLIC_ID: "",
-  STORE_NAME: "FITLYNE",
-  STORE_SUBTITLE: "Moda Fitness & Makeup",
-  BUILD: "2026-07-31-0115-v13",
-  ...(window.FITLYNE_CONFIG || {})
-});
+const C = window.FITLYNE_CONFIG;
+
+if (!C || !String(C.API_URL || "").startsWith("https://script.google.com/macros/s/")) {
+  throw new Error("Configuração inválida. Edite somente o arquivo fitlyne-config.js.");
+}
 
 const FITLYNE_API_URL = C.API_URL;
-console.info("FITLYNE app-v13 ativo", { build: C.BUILD, api: FITLYNE_API_URL });
+console.info("FITLYNE app-v15 ativo", { build: C.BUILD, api: FITLYNE_API_URL });
+window.FITLYNE_DIAGNOSTICO = () => ({
+  build: C.BUILD,
+  api: C.API_URL,
+  cloudinary: C.CLOUDINARY_CLOUD_NAME,
+  preset: C.CLOUDINARY_UPLOAD_PRESET,
+  app: "v15"
+});
 
 const state = {
   token: sessionStorage.getItem("fitlyneToken") || "",
@@ -44,6 +46,12 @@ const numberValue = (value) => {
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : 0;
 };
+
+function isProductActive(product) {
+  const value = String(product?.ATIVO ?? "").trim().toUpperCase();
+  // Produtos antigos sem valor em ATIVO continuam publicados. Só ocultamos quando houver marcação explícita.
+  return !["NAO", "NÃO", "FALSE", "0", "INATIVO", "OCULTO"].includes(value);
+}
 
 function normalizeLoadedData(data) {
   state.products = Array.isArray(data.products) ? data.products.map((product) => ({ ...product, ID: String(product.ID ?? "").trim() })) : [];
@@ -254,7 +262,7 @@ function renderWhatsappWarning() {
 }
 
 function renderDashboard() {
-  const active = state.products.filter((product) => String(product.ATIVO).toUpperCase() === "SIM");
+  const active = state.products.filter(isProductActive);
   const stock = active.reduce((total, product) => total + numberValue(product.ESTOQUE_ATUAL), 0);
   const low = active.filter((product) => {
     const current = numberValue(product.ESTOQUE_ATUAL);
@@ -314,7 +322,7 @@ function renderProducts() {
     return `<article class="product-card" data-product-id="${escapeHtml(product.ID)}">
       ${imageTag(photo, product.NOME, "product-image")}
       <div class="product-card-body">
-        <div class="admin-card-badges"><span class="badge">${escapeHtml(product.NICHO)}</span><span class="availability-badge ${statusClass(effective)}">${statusLabel(effective)}</span></div>
+        <div class="admin-card-badges"><span class="badge">${escapeHtml(product.NICHO)}</span><span class="availability-badge ${statusClass(effective)}">${statusLabel(effective)}</span><span class="publication-badge ${isProductActive(product) ? "published" : "hidden-product"}">${isProductActive(product) ? "Publicado" : "Oculto"}</span></div>
         <h3>${escapeHtml(product.NOME)}</h3>
         <p>${escapeHtml(product.TAMANHO_EXIBICAO || "")} ${product.COR_TOM ? "· " + escapeHtml(product.COR_TOM) : ""}</p>
         <p class="price">${money(product.PRECO_VENDA)}</p>
@@ -585,7 +593,7 @@ window.editProduct = function editProduct(id) {
   $("#initialStock").value = product.ESTOQUE_ATUAL || 0;
   $("#minStock").value = product.ESTOQUE_MINIMO || 0;
   $("#catalogStatus").value = product.STATUS_CATALOGO || "AUTOMATICO";
-  $("#activeProduct").checked = product.ATIVO === "SIM";
+  $("#activeProduct").checked = isProductActive(product);
   const mode = product.TIPO_TAMANHO || "UNICO";
   $(`input[name="sizeMode"][value="${mode}"]`).checked = true;
   if (mode === "UNICO") {
@@ -628,7 +636,7 @@ window.deleteProduct = async function deleteProduct(id) {
 };
 
 function populateProductSelects() {
-  const options = '<option value="">Selecione</option>' + state.products.filter((product) => product.ATIVO === "SIM").map((product) => `<option value="${product.ID}">${escapeHtml(product.NOME)} — estoque ${product.ESTOQUE_ATUAL}</option>`).join("");
+  const options = '<option value="">Selecione</option>' + state.products.filter(isProductActive).map((product) => `<option value="${product.ID}">${escapeHtml(product.NOME)} — estoque ${product.ESTOQUE_ATUAL}</option>`).join("");
   $("#stockProduct").innerHTML = options;
   $("#saleProduct").innerHTML = options;
 }
