@@ -99,3 +99,19 @@ body:not(.authenticated) .drawer-link,body:not(.authenticated) .quick-action{dis
 .status-banner div{display:grid;gap:3px}.status-banner small{color:var(--muted)}.status-banner.warning{border-color:#eed99c;background:#fffaf0}
 button:disabled{cursor:not-allowed;opacity:.58}
 @media(max-width:520px){.admin-card-badges{align-items:flex-start}.quick-status{font-size:.8rem}}
+
+
+/* V13 — menu alinhado, edição confiável, fotos com fallback e estoque baixo correto */
+.icon-sprite{position:absolute;width:0;height:0;overflow:hidden;pointer-events:none}
+.icon,.nav-icon,.source-icon{display:block;width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:0 0 auto}
+.icon-btn .icon{width:24px;height:24px}
+.drawer nav{display:grid;gap:4px;padding:8px 10px 16px}
+.drawer nav button,.drawer nav .drawer-link{display:flex;align-items:center;gap:13px;width:100%;min-height:48px;padding:11px 12px;border:0;border-radius:12px;background:transparent;color:#202020;font:inherit;font-weight:700;text-align:left}
+.drawer nav button:hover,.drawer nav .drawer-link:hover{background:#f3f3f3}
+.drawer nav button span,.drawer nav .drawer-link span{min-width:0}
+.drawer .drawer-logout{margin-top:8px;border-top:1px solid var(--line);border-radius:0;padding-top:16px;color:#8d2323}
+.source-icon{width:21px;height:21px;margin-right:7px}
+.section-heading h2{margin:0}.section-heading p{margin:4px 0 0;color:var(--muted);font-size:.84rem}
+.product-card .product-image{display:block}
+.card-actions button{cursor:pointer}
+@media(max-width:520px){.drawer{width:min(86vw,330px)}.drawer nav button,.drawer nav .drawer-link{min-height:50px}}

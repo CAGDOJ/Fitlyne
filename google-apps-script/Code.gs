@@ -9,7 +9,7 @@ const SHEETS = {
   DESPESAS: ["ID", "DATA", "DESCRICAO", "CATEGORIA", "VALOR"]
 };
 
-const PUBLIC_CACHE_KEY = "FITLYNE_PUBLIC_CATALOG_V11";
+const PUBLIC_CACHE_KEY = "FITLYNE_PUBLIC_CATALOG_V13";
 const VALID_CATALOG_STATUS = ["AUTOMATICO", "DISPONIVEL", "ESGOTADO", "REPOSICAO"];
 
 function setupSystem() {
@@ -52,7 +52,7 @@ function ensureProductStatusColumn_() {
 
 function doGet() {
   ensureProductStatusColumn_();
-  return json_({ ok: true, data: { name: "FITLYNE API", version: "v11" } });
+  return json_({ ok: true, data: { name: "FITLYNE API", version: "v13" } });
 }
 
 function doPost(e) {
@@ -127,11 +127,22 @@ function bootstrap_() {
   };
 }
 
+function number_(value) {
+  if (typeof value === "number") return isFinite(value) ? value : 0;
+  const normalized = String(value == null ? "" : value).trim().replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+  const parsed = Number(normalized);
+  return isFinite(parsed) ? parsed : 0;
+}
+
+function sameId_(left, right) {
+  return String(left == null ? "" : left).trim() === String(right == null ? "" : right).trim();
+}
+
 function catalogStatus_(product) {
   let status = String(product.STATUS_CATALOGO || "AUTOMATICO").toUpperCase();
   if (VALID_CATALOG_STATUS.indexOf(status) < 0) status = "AUTOMATICO";
-  if (status === "AUTOMATICO") status = Number(product.ESTOQUE_ATUAL || 0) > 0 ? "DISPONIVEL" : "ESGOTADO";
-  if (status === "DISPONIVEL" && Number(product.ESTOQUE_ATUAL || 0) <= 0) status = "ESGOTADO";
+  if (status === "AUTOMATICO") status = number_(product.ESTOQUE_ATUAL) > 0 ? "DISPONIVEL" : "ESGOTADO";
+  if (status === "DISPONIVEL" && number_(product.ESTOQUE_ATUAL) <= 0) status = "ESGOTADO";
   return status;
 }
 
@@ -166,10 +177,10 @@ function publicCatalog_() {
     return String(product.ATIVO).toUpperCase() === "SIM";
   }).map(publicProduct_);
   const publicIds = {};
-  publicProducts.forEach(function(product) { publicIds[String(product.ID)] = true; });
+  publicProducts.forEach(function(product) { publicIds[String(product.ID == null ? "" : product.ID).trim()] = true; });
   const data = {
     products: publicProducts,
-    photos: readSheet_("FOTOS").filter(function(photo) { return publicIds[String(photo.ID_PRODUTO)]; }),
+    photos: readSheet_("FOTOS").filter(function(photo) { return publicIds[String(photo.ID_PRODUTO == null ? "" : photo.ID_PRODUTO).trim()]; }),
     config: {
       WHATSAPP: allConfig.WHATSAPP || "",
       NOME_LOJA: allConfig.NOME_LOJA || "FITLYNE",
@@ -184,12 +195,20 @@ function clearPublicCache_() {
   CacheService.getScriptCache().remove(PUBLIC_CACHE_KEY);
 }
 
+function cloudinaryUrl_(cloudName, publicId, format, version, transformation) {
+  const versionPart = version ? "v" + version + "/" : "";
+  return "https://res.cloudinary.com/" + encodeURIComponent(cloudName) + "/image/upload/" + transformation + "/" + versionPart + publicId + "." + format;
+}
+
 function uploadImage_(payload) {
   const CLOUD_NAME = "v9gfcyqm";
   const UPLOAD_PRESET = "fitlyne_upload";
   const mime = String(payload.mimeType || "image/jpeg");
   const fileName = String(payload.fileName || "foto.jpg").replace(/[^a-zA-Z0-9._-]/g, "_");
   const base64 = String(payload.base64 || "");
+  const productId = String(payload.productId || "").trim();
+  const order = Math.max(1, number_(payload.order || 1));
+  const principal = String(payload.principal || (order === 1 ? "SIM" : "NAO")).toUpperCase() === "SIM" ? "SIM" : "NAO";
   if (!base64) throw new Error("A foto não chegou à API.");
   if (!/^image\//i.test(mime)) throw new Error("O arquivo recebido não é uma imagem.");
   let bytes;
@@ -212,7 +231,28 @@ function uploadImage_(payload) {
     const detail = data && data.error && data.error.message ? data.error.message : raw.slice(0, 400);
     throw new Error("Cloudinary recusou a foto (HTTP " + status + "): " + (detail || "sem detalhes"));
   }
-  return { cloud_name: CLOUD_NAME, secure_url: data.secure_url, public_id: data.public_id, format: data.format || "jpg", version: data.version || "" };
+  const format = String(data.format || "jpg");
+  const photo = {
+    ID: "FOTO_" + Utilities.getUuid(),
+    ID_PRODUTO: productId,
+    ORDEM: order,
+    PRINCIPAL: principal,
+    PUBLIC_ID: String(data.public_id),
+    URL_ORIGINAL: String(data.secure_url),
+    URL_CATALOGO: String(data.secure_url),
+    URL_FEED: cloudinaryUrl_(CLOUD_NAME, data.public_id, format, data.version, "f_auto,q_auto:good,c_fill,w_1080,h_1350"),
+    URL_STORY: cloudinaryUrl_(CLOUD_NAME, data.public_id, format, data.version, "f_auto,q_auto:good,c_fill,w_1080,h_1920"),
+    URL_WHATSAPP: String(data.secure_url),
+    URL_FACEBOOK: String(data.secure_url),
+    URL_SHOPEE: String(data.secure_url),
+    URL_MERCADO_LIVRE: String(data.secure_url),
+    CRIADO_EM: new Date()
+  };
+  if (productId) {
+    upsert_("FOTOS", "ID", photo);
+    clearPublicCache_();
+  }
+  return { cloud_name: CLOUD_NAME, secure_url: data.secure_url, public_id: data.public_id, format: format, version: data.version || "", photo: photo };
 }
 
 function saveProduct_(payload) {
@@ -227,15 +267,26 @@ function saveProduct_(payload) {
   const object = Object.assign({}, product, { CRIADO_EM: current ? current.CRIADO_EM : now, ATUALIZADO_EM: now });
   upsert_("PRODUTOS", "ID", object);
   replaceByProduct_("VARIACOES", product.ID, payload.variants || []);
-  const photos = payload.photos || [];
+  const photos = Array.isArray(payload.photos) ? payload.photos : [];
   if (photos.length) {
-    readSheet_("FOTOS").filter(function(photo) { return String(photo.ID_PRODUTO) === String(product.ID); }).forEach(function(photo) {
+    readSheet_("FOTOS").filter(function(photo) { return sameId_(photo.ID_PRODUTO, product.ID); }).forEach(function(photo) {
       photo.PRINCIPAL = "NAO";
       upsert_("FOTOS", "ID", photo);
     });
-    photos.forEach(function(photo) { upsert_("FOTOS", "ID", Object.assign({}, photo, { CRIADO_EM: now })); });
+    photos.forEach(function(photo, index) {
+      const normalized = Object.assign({}, photo, {
+        ID: String(photo.ID || ("FOTO_" + Utilities.getUuid())),
+        ID_PRODUTO: String(product.ID),
+        ORDEM: number_(photo.ORDEM || index + 1),
+        PRINCIPAL: index === 0 ? "SIM" : "NAO",
+        URL_ORIGINAL: String(photo.URL_ORIGINAL || photo.URL_CATALOGO || ""),
+        URL_CATALOGO: String(photo.URL_CATALOGO || photo.URL_ORIGINAL || ""),
+        CRIADO_EM: photo.CRIADO_EM || now
+      });
+      upsert_("FOTOS", "ID", normalized);
+    });
   }
-  if (!current && Number(product.ESTOQUE_ATUAL) > 0) {
+  if (!current && number_(product.ESTOQUE_ATUAL) > 0) {
     appendObject_("MOVIMENTACOES", { ID: Utilities.getUuid(), DATA: now, ID_PRODUTO: product.ID, PRODUTO: product.NOME, TIPO: "ENTRADA", QUANTIDADE: product.ESTOQUE_ATUAL, MOTIVO: "ESTOQUE INICIAL" });
   }
   clearPublicCache_();
@@ -267,8 +318,8 @@ function stockMovement_(payload) {
   const row = findRow_("PRODUTOS", "ID", payload.productId);
   if (!row) throw new Error("Produto não encontrado");
   const product = rowObject_("PRODUTOS", row);
-  const quantity = Number(payload.qty || 0);
-  const oldStock = Number(product.ESTOQUE_ATUAL || 0);
+  const quantity = number_(payload.qty);
+  const oldStock = number_(product.ESTOQUE_ATUAL);
   const type = payload.type;
   let next = oldStock;
   if (type === "ENTRADA" || type === "DEVOLUCAO") next = oldStock + quantity;
@@ -287,14 +338,14 @@ function saveSale_(payload) {
   const row = findRow_("PRODUTOS", "ID", payload.productId);
   if (!row) throw new Error("Produto não encontrado");
   const product = rowObject_("PRODUTOS", row);
-  const quantity = Number(payload.qty || 1);
-  if (Number(product.ESTOQUE_ATUAL) < quantity) throw new Error("Estoque insuficiente");
-  const unit = Number(product.PRECO_VENDA || 0);
-  const discount = Number(payload.discount || 0);
+  const quantity = number_(payload.qty || 1);
+  if (number_(product.ESTOQUE_ATUAL) < quantity) throw new Error("Estoque insuficiente");
+  const unit = number_(product.PRECO_VENDA);
+  const discount = number_(payload.discount);
   const total = Math.max(0, unit * quantity - discount);
   const now = new Date();
   appendObject_("VENDAS", { ID: Utilities.getUuid(), DATA: now, ID_PRODUTO: product.ID, PRODUTO: product.NOME, QUANTIDADE: quantity, VALOR_UNITARIO: unit, DESCONTO: discount, TOTAL: total, CLIENTE: payload.client || "", TELEFONE: payload.phone || "", PAGAMENTO: payload.payment || "PIX" });
-  product.ESTOQUE_ATUAL = Number(product.ESTOQUE_ATUAL) - quantity;
+  product.ESTOQUE_ATUAL = number_(product.ESTOQUE_ATUAL) - quantity;
   product.ATUALIZADO_EM = now;
   upsert_("PRODUTOS", "ID", product);
   appendObject_("MOVIMENTACOES", { ID: Utilities.getUuid(), DATA: now, ID_PRODUTO: product.ID, PRODUTO: product.NOME, TIPO: "VENDA", QUANTIDADE: quantity, MOTIVO: "VENDA" });
@@ -308,7 +359,7 @@ function upsertClient_(name, phone, total, date) {
   if (found) {
     found.NOME = name || found.NOME;
     found.COMPRAS = Number(found.COMPRAS || 0) + 1;
-    found.TOTAL_GASTO = Number(found.TOTAL_GASTO || 0) + Number(total);
+    found.TOTAL_GASTO = Number(found.TOTAL_GASTO || 0) + number_(total);
     found.ULTIMA_COMPRA = date;
     upsert_("CLIENTES", "ID", found);
   } else {
@@ -317,7 +368,7 @@ function upsertClient_(name, phone, total, date) {
 }
 
 function saveExpense_(payload) {
-  appendObject_("DESPESAS", { ID: Utilities.getUuid(), DATA: new Date(), DESCRICAO: payload.description, CATEGORIA: payload.category || "", VALOR: Number(payload.value || 0) });
+  appendObject_("DESPESAS", { ID: Utilities.getUuid(), DATA: new Date(), DESCRICAO: payload.description, CATEGORIA: payload.category || "", VALOR: number_(payload.value) });
   return true;
 }
 

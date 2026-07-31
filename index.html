@@ -8,13 +8,29 @@
   <link rel="icon" href="./favicon.ico" sizes="any">
   <link rel="icon" type="image/svg+xml" href="./assets/icon.svg">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="styles.css?v=20260731-0045-v11">
+  <link rel="stylesheet" href="styles.css?v=20260731-0115-v13">
 </head>
 <body class="guest">
+  <svg class="icon-sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5M5.5 10.5V20h13v-9.5M9.5 20v-6h5v6"/></symbol>
+    <symbol id="i-plus-box" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M12 8v8M8 12h8"/></symbol>
+    <symbol id="i-box" viewBox="0 0 24 24"><path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="M4 7v10l8 4 8-4V7M12 11v10"/></symbol>
+    <symbol id="i-store" viewBox="0 0 24 24"><path d="M4 10v10h16V10M3 10l2-6h14l2 6"/><path d="M8 20v-6h8v6M3 10c0 2 3 2 3 0 0 2 3 2 3 0 0 2 3 2 3 0 0 2 3 2 3 0 0 2 3 2 3 0 0 2 3 2 3 0"/></symbol>
+    <symbol id="i-stock" viewBox="0 0 24 24"><path d="M4 7h16v13H4zM7 4h10v3M8 12h8M12 8v8"/></symbol>
+    <symbol id="i-cart" viewBox="0 0 24 24"><path d="M3 4h2l2.2 10.5h9.8l2-7.5H6"/><circle cx="9" cy="19" r="1.5"/><circle cx="17" cy="19" r="1.5"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3.5 20v-2.5A4.5 4.5 0 0 1 8 13h2a4.5 4.5 0 0 1 4.5 4.5V20M16 6.5a3 3 0 0 1 0 5.5M17 14a4 4 0 0 1 3.5 4v2"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M4 6h14a2 2 0 0 1 2 2v11H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h13"/><path d="M15 11h6v5h-6a2.5 2.5 0 0 1 0-5Z"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M10 4H4v16h6M14 8l4 4-4 4M8 12h10"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m5 18 5-5 3 3 2-2 4 4"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 7h4l2-3h4l2 3h4v13H4z"/><circle cx="12" cy="13" r="4"/></symbol>
+  </svg>
   <div id="toast"></div>
 
   <header class="topbar">
-    <button class="icon-btn" id="menuBtn" type="button" aria-label="Abrir menu administrativo" aria-controls="drawer" aria-expanded="false" hidden>☰</button>
+    <button class="icon-btn" id="menuBtn" type="button" aria-label="Abrir menu administrativo" aria-controls="drawer" aria-expanded="false" hidden><svg class="icon"><use href="#i-menu"></use></svg></button>
     <div>
       <strong id="brandName">FITLYNE</strong>
       <small id="brandSubtitle">Moda Fitness & Makeup</small>
@@ -25,19 +41,19 @@
   <aside id="drawer" class="drawer" aria-hidden="true" hidden>
     <div class="drawer-head">
       <strong>FITLYNE ADMIN</strong>
-      <button class="icon-btn" id="closeDrawer">✕</button>
+      <button class="icon-btn" id="closeDrawer" type="button" aria-label="Fechar menu"><svg class="icon"><use href="#i-close"></use></svg></button>
     </div>
-    <nav>
-      <button data-view="dashboard">⌂ Dashboard</button>
-      <button data-view="productForm">+ Novo produto</button>
-      <button data-view="products">□ Produtos</button>
-      <a class="drawer-link" href="./catalog.html" target="_blank" rel="noopener">▣ Ver catálogo público</a>
-      <button data-view="stock">↻ Estoque</button>
-      <button data-view="sales">≡ Vendas</button>
-      <button data-view="clients">○ Clientes</button>
-      <button data-view="finance">$ Financeiro</button>
-      <button data-view="settings">⚙ Configurações</button>
-      <button id="logoutBtn">↪ Sair</button>
+    <nav aria-label="Menu administrativo">
+      <button type="button" data-view="dashboard"><svg class="nav-icon"><use href="#i-home"></use></svg><span>Dashboard</span></button>
+      <button type="button" data-view="productForm"><svg class="nav-icon"><use href="#i-plus-box"></use></svg><span>Novo produto</span></button>
+      <button type="button" data-view="products"><svg class="nav-icon"><use href="#i-box"></use></svg><span>Produtos</span></button>
+      <a class="drawer-link" href="./catalog.html" target="_blank" rel="noopener"><svg class="nav-icon"><use href="#i-store"></use></svg><span>Ver catálogo público</span></a>
+      <button type="button" data-view="stock"><svg class="nav-icon"><use href="#i-stock"></use></svg><span>Estoque</span></button>
+      <button type="button" data-view="sales"><svg class="nav-icon"><use href="#i-cart"></use></svg><span>Vendas</span></button>
+      <button type="button" data-view="clients"><svg class="nav-icon"><use href="#i-users"></use></svg><span>Clientes</span></button>
+      <button type="button" data-view="finance"><svg class="nav-icon"><use href="#i-wallet"></use></svg><span>Financeiro</span></button>
+      <button type="button" data-view="settings"><svg class="nav-icon"><use href="#i-settings"></use></svg><span>Configurações</span></button>
+      <button type="button" id="logoutBtn" class="drawer-logout"><svg class="nav-icon"><use href="#i-logout"></use></svg><span>Sair</span></button>
     </nav>
   </aside>
   <div id="backdrop" class="backdrop" hidden></div>
@@ -73,7 +89,7 @@
         </div>
       </div>
       <div class="card">
-        <h2>Estoque baixo</h2>
+        <div class="section-heading"><div><h2>Estoque baixo</h2><p>Somente produtos acima de zero e abaixo do estoque mínimo.</p></div></div>
         <div id="lowStockList" class="list"></div>
       </div>
     </section>
@@ -147,11 +163,11 @@
           <p class="muted">Tire fotos agora ou escolha da galeria. A primeira será a capa.</p>
           <div class="photo-source-grid">
             <label class="photo-source-button">
-              🖼️ Escolher da galeria
+              <svg class="source-icon"><use href="#i-image"></use></svg><span>Escolher da galeria</span>
               <input id="galleryInput" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" multiple hidden>
             </label>
             <label class="photo-source-button">
-              📷 Tirar foto
+              <svg class="source-icon"><use href="#i-camera"></use></svg><span>Tirar foto</span>
               <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
             </label>
           </div>
@@ -257,8 +273,8 @@
     </section>
 
   </main>
-  <script src="./fitlyne-config-v11.js?v=20260731-0045"></script>
-  <script src="./app-v11.js?v=20260731-0045"></script>
+  <script src="./fitlyne-config.js?v=20260731-0115-v13"></script>
+  <script src="./app.js?v=20260731-0115-v13"></script>
 </body>
 </html>
 
