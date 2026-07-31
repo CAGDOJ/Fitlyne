@@ -30,7 +30,8 @@
     }
 
     const entryScript = document.createElement("script");
-    entryScript.src = entry;
+    const separator = entry.includes("?") ? "&" : "?";
+    entryScript.src = `${entry}${separator}build=${encodeURIComponent(window.FITLYNE_CONFIG.BUILD || Date.now())}`;
     entryScript.async = false;
     entryScript.onerror = (error) => fail(`Não foi possível carregar ${entry}.`, error);
     document.body.appendChild(entryScript);

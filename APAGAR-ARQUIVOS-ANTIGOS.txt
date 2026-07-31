@@ -1,0 +1,19 @@
+APAGUE DO REPOSITÓRIO ANTES DE ENVIAR A VERSÃO LIMPA
+
+Arquivos antigos conhecidos:
+- ATUALIZAR-E-PUBLICAR.txt
+- LEIA-PRIMEIRO-V4.txt
+- LEIA-PRIMEIRO-V7.txt
+- LEIA-PRIMEIRO-V11.txt
+- LEIA-PRIMEIRO-V13.txt
+- LEIA-PRIMEIRO-V14.txt
+- LEIA-PRIMEIRO-V15.txt
+- app-v4.js
+- app-v7.js
+- catalog-v4.js
+- catalog-v7.js
+- fitlyne-config-v4.js
+- fitlyne-config-v7.js
+- quaisquer pastas ou arquivos chamados v4, v7, v11, v13, v14 ou v15
+
+Depois deixe somente os arquivos presentes neste pacote.

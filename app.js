@@ -7,13 +7,13 @@ if (!C || !String(C.API_URL || "").startsWith("https://script.google.com/macros/
 }
 
 const FITLYNE_API_URL = C.API_URL;
-console.info("FITLYNE app-v15 ativo", { build: C.BUILD, api: FITLYNE_API_URL });
+console.info("FITLYNE painel ativo", { build: C.BUILD, api: FITLYNE_API_URL });
 window.FITLYNE_DIAGNOSTICO = () => ({
   build: C.BUILD,
   api: C.API_URL,
   cloudinary: C.CLOUDINARY_CLOUD_NAME,
   preset: C.CLOUDINARY_UPLOAD_PRESET,
-  app: "v15"
+  app: "painel"
 });
 
 const state = {

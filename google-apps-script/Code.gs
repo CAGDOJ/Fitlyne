@@ -53,7 +53,7 @@ function ensureProductStatusColumn_() {
 
 function doGet() {
   ensureProductStatusColumn_();
-  return json_({ ok: true, data: { name: "FITLYNE API", version: "v15" } });
+  return json_({ ok: true, data: { name: "FITLYNE API", version: "final-limpa" } });
 }
 
 function doPost(e) {
@@ -475,3 +475,4 @@ function replaceByProduct_(name, productId, rows) {
   deleteWhere_(name, "ID_PRODUTO", productId);
   rows.forEach(function(row) { appendObject_(name, Object.assign({}, row, { ID_PRODUTO: productId, CRIADO_EM: new Date() })); });
 }
+
