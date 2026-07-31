@@ -139,3 +139,19 @@ button:disabled{cursor:not-allowed;opacity:.58}
 #whatsappApiForm{margin-top:18px}.section-heading .publication-badge{flex:0 0 auto}
 @media(min-width:760px){.request-list{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:620px){.request-actions{grid-template-columns:1fr}.page-title{align-items:flex-start;flex-wrap:wrap}.page-title>.compact{width:100%}.section-heading{align-items:flex-start}.status-banner{align-items:flex-start;flex-direction:column}.status-banner button{width:100%}}
+
+
+/* Login rápido e feedback visual profissional */
+.login-helper{display:block;margin:-8px 0 18px;color:var(--muted);font-size:.78rem;font-weight:600}
+.login-card #loginBtn{min-height:50px;transition:transform .12s ease,opacity .12s ease,background .12s ease}
+.login-card #loginBtn:active:not(:disabled){transform:translateY(1px)}
+.login-card #loginBtn[aria-busy="true"]{opacity:1;background:#191919}
+.button-spinner{width:18px;height:18px;border:2px solid rgba(255,255,255,.38);border-top-color:#fff;border-radius:50%;animation:fitlyne-spin .65s linear infinite}
+.login-message{display:flex;align-items:center;gap:7px}
+.login-message.loading::before{content:"";width:13px;height:13px;border:2px solid #d8cbd0;border-top-color:#555;border-radius:50%;animation:fitlyne-spin .65s linear infinite;flex:0 0 auto}
+.login-message.success::before{content:"✓";font-weight:900}
+.login-message.error::before{content:"!";display:grid;place-items:center;width:16px;height:16px;border-radius:50%;background:#a3201a;color:#fff;font-size:.7rem;flex:0 0 auto}
+@keyframes fitlyne-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.button-spinner,.login-message.loading::before{animation:none}}
+
+.pin-secure{-webkit-text-security:disc}

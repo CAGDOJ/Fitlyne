@@ -125,10 +125,10 @@ function openWhatsapp(phone, message) {
   return true;
 }
 
-async function api(action, payload = {}, auth = true) {
+async function api(action, payload = {}, auth = true, timeoutMs = 30000) {
   if (!FITLYNE_API_URL) throw new Error("API da Fitlyne não configurada.");
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 45000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(FITLYNE_API_URL, {
       method: "POST",
@@ -211,25 +211,46 @@ function showView(name) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
+function applyLoadedData(data) {
+  normalizeLoadedData(data || {});
+  $("#brandName").textContent = state.config.NOME_LOJA || C.STORE_NAME;
+  $("#brandSubtitle").textContent = state.config.SUBTITULO || C.STORE_SUBTITLE;
+  populateProductSelects();
+  renderWhatsappWarning();
+  updateRequestIndicators();
+}
+
 async function login(event) {
   event?.preventDefault?.();
-  const pin = $("#pinInput").value.trim();
+  const pinInput = $("#pinInput");
+  const pin = pinInput.value.trim();
   if (!pin) {
     setLoginMessage("Digite o PIN administrativo.", "error");
-    $("#pinInput").focus();
+    pinInput.focus();
     return;
   }
+
   const button = $("#loginBtn");
+  const originalHtml = button.innerHTML;
   button.disabled = true;
-  button.textContent = "Verificando...";
-  setLoginMessage("Conectando ao sistema...", "loading");
+  button.setAttribute("aria-busy", "true");
+  button.innerHTML = '<span class="button-spinner" aria-hidden="true"></span><span>Entrando...</span>';
+  pinInput.disabled = true;
+  setLoginMessage("Verificando o acesso...", "loading");
+
   try {
-    const result = await api("login", { pin }, false);
+    // O backend devolve o token e os dados iniciais na mesma chamada.
+    // Isso evita uma segunda espera logo após validar o PIN.
+    const result = await api("login", { pin }, false, 30000);
     if (!result?.token) throw new Error("A API não devolveu uma sessão válida.");
+
     state.token = result.token;
     sessionStorage.setItem("fitlyneToken", result.token);
-    setLoginMessage("PIN correto. Carregando a gestão...", "success");
-    await loadAll();
+    setLoginMessage("Acesso liberado. Abrindo a gestão...", "success");
+
+    if (result.bootstrap) applyLoadedData(result.bootstrap);
+    else await loadAll();
+
     setAuthenticatedUI(true);
     showView("dashboard");
     setLoginMessage("");
@@ -240,20 +261,19 @@ async function login(event) {
     const message = error?.message || "Não foi possível entrar.";
     setLoginMessage(message, "error");
     toast(message);
+    pinInput.select();
   } finally {
     button.disabled = false;
-    button.textContent = "Entrar";
+    button.removeAttribute("aria-busy");
+    button.innerHTML = originalHtml;
+    pinInput.disabled = false;
+    pinInput.focus();
   }
 }
 
 async function loadAll() {
-  const data = await api("bootstrap");
-  normalizeLoadedData(data || {});
-  $("#brandName").textContent = state.config.NOME_LOJA || C.STORE_NAME;
-  $("#brandSubtitle").textContent = state.config.SUBTITULO || C.STORE_SUBTITLE;
-  populateProductSelects();
-  renderWhatsappWarning();
-  updateRequestIndicators();
+  const data = await api("bootstrap", {}, true, 30000);
+  applyLoadedData(data);
 }
 
 function logout() {
@@ -1051,4 +1071,20 @@ async function init() {
   }
 }
 
-document.addEventListener("DOMContentLoaded", init);
+let initStarted = false;
+function startFitlyne() {
+  if (initStarted) return;
+  initStarted = true;
+  init().catch((error) => {
+    console.error("Falha ao iniciar a FITLYNE:", error);
+    setLoginMessage(error?.message || "Não foi possível iniciar o sistema.", "error");
+  });
+}
+
+// app.js é carregado dinamicamente depois de fitlyne-config.js. Em conexões rápidas,
+// o DOMContentLoaded pode já ter acontecido; por isso iniciamos imediatamente nesse caso.
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", startFitlyne, { once: true });
+} else {
+  startFitlyne();
+}

@@ -65,9 +65,9 @@
       <form id="loginForm" class="card login-card" novalidate>
         <div class="logo-circle">F</div>
         <h1>FITLYNE</h1>
-        <p>Gestão simples</p>
+        <p>Gestão simples</p><small class="login-helper">Acesso administrativo rápido e seguro</small>
         <label>PIN administrativo
-          <input id="pinInput" type="password" inputmode="numeric" maxlength="8" placeholder="Digite o PIN" autocomplete="current-password" required>
+          <input id="pinInput" class="pin-secure" type="text" inputmode="numeric" maxlength="8" placeholder="Digite o PIN" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" required>
         </label>
         <button class="primary" id="loginBtn" type="submit">Entrar</button>
         <p id="loginMessage" class="login-message" role="status" aria-live="polite"></p>
@@ -328,7 +328,7 @@
     </section>
 
   </main>
-  <script src="./bootstrap.js?v=2026-07-31-profissional-avisos" data-entry="./app.js"></script>
+  <script src="./bootstrap.js?v=2026-07-31-login-rapido" data-entry="./app.js"></script>
 </body>
 </html>
 

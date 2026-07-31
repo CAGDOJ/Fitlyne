@@ -1,6 +1,17 @@
-1. Substitua o Code.gs no Apps Script.
-2. Execute setupSystem uma vez.
-3. Crie NOVA VERSÃO na implantação existente.
-4. Envie os arquivos deste pacote para a raiz do GitHub.
-5. Entre no painel e teste o login.
-6. Abra o catálogo e teste “Solicitar produto” e “Avise-me quando chegar”.
+FITLYNE — LOGIN RÁPIDO E CORRIGIDO
+
+CORREÇÃO PRINCIPAL
+- O botão Entrar não respondia porque app.js podia carregar depois do evento DOMContentLoaded.
+- Agora o sistema inicia tanto antes quanto depois desse evento.
+- O botão mostra spinner e mensagens reais de carregamento/erro.
+- O login e os dados iniciais chegam em uma única chamada ao Apps Script.
+
+ATUALIZAÇÃO
+1. Google Apps Script: substitua todo o Code.gs pelo arquivo google-apps-script/Code.gs.
+2. Salve e edite a implantação existente: Nova versão > Implantar.
+3. GitHub: substitua os arquivos do site pelos arquivos desta pasta.
+4. Aguarde o Pages publicar e abra o site com Ctrl+Shift+R.
+
+IMPORTANTE
+- Continue usando a implantação existente; não crie uma URL nova sem necessidade.
+- A URL atual já está em fitlyne-config.js.
