@@ -1,0 +1,21 @@
+FITLYNE V4 — CORREÇÃO DO ERRO 401 E DO CACHE ANTIGO
+
+1. Entre no repositório GitHub usado pelo GitHub Pages.
+2. Apague/substitua os arquivos antigos da RAIZ do repositório.
+3. Envie o CONTEÚDO desta pasta Fitlyne, não a pasta Fitlyne inteira dentro de outra pasta.
+4. Confirme que index.html, app-v4.js e fitlyne-config-v4.js aparecem na raiz.
+5. Aguarde o GitHub Pages publicar e pressione Ctrl+Shift+R.
+
+Esta versão usa nomes novos de arquivos para impedir que o navegador carregue o código antigo.
+Cloudinary fixo no código público:
+- Cloud name: v9gfcyqm
+- Upload preset: fitlyne_upload
+- Endpoint: https://api.cloudinary.com/v1_1/v9gfcyqm/image/upload
+
+A API Secret NÃO deve ser colocada no GitHub.
+
+No Console deve aparecer:
+- FITLYNE carregada: 2026-07-30-2305-v4
+- FITLYNE app-v4 ativo
+
+Se esses textos não aparecerem, o GitHub ainda está servindo arquivos antigos ou os arquivos foram enviados para uma subpasta.
