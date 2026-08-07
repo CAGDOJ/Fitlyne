@@ -24,6 +24,7 @@ const state = {
   filter: "",
   sort: "CLICKS",
   currentGroupIds: [],
+  shippingRegion: localStorage.getItem("fitlyneShippingRegion") || "",
   cart: JSON.parse(localStorage.getItem("fitlyneCart") || "[]")
 };
 
@@ -44,8 +45,13 @@ function normalizedNiche(value) {
 }
 
 function groupKey(product) {
-  const clean = (value) => String(value ?? "").trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
-  return [normalizedNiche(product.NICHO), clean(product.CATEGORIA), clean(product.MARCA), clean(product.NOME)].join("|");
+  const id = String(product?.ID || "").trim();
+  const explicit = String(product?.GRUPO_CATALOGO || "").trim();
+  // Produtos são independentes por padrão. O produto principal entra no mesmo
+  // grupo quando outra variação aponta para o ID dele.
+  if (explicit) return `GROUP:${explicit}`;
+  const isGroupRoot = state.products.some((entry) => sameId(entry.GRUPO_CATALOGO, id));
+  return isGroupRoot ? `GROUP:${id}` : `PRODUCT:${id}`;
 }
 
 function variantsFor(product) {
@@ -57,11 +63,44 @@ function fireAndForget(action, payload) {
   fetch(FITLYNE_API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action, payload, public: true }), redirect: "follow", keepalive: true }).catch(() => {});
 }
 
+function shippingEnabled() {
+  return String(state.config.FRETE_ATIVO || "NAO").trim().toUpperCase() === "SIM";
+}
+
+function shippingRegions() {
+  return [
+    { id: "BELEM", label: "Belém", amount: Number(state.config.FRETE_BELEM || 0) },
+    { id: "ANANINDEUA", label: "Ananindeua", amount: Number(state.config.FRETE_ANANINDEUA || 0) },
+    { id: "MARITUBA", label: "Marituba", amount: Number(state.config.FRETE_MARITUBA || 0) }
+  ].filter((region) => region.amount > 0);
+}
+
+function selectedShippingRegion() {
+  return shippingRegions().find((region) => region.id === state.shippingRegion) || null;
+}
+
 function shippingFor(subtotal) {
-  const fixed = Number(state.config.FRETE_FIXO || 0);
+  if (!shippingEnabled()) return { enabled: false, amount: 0, label: "Desativado", region: null };
+  const region = selectedShippingRegion();
+  if (!region) return { enabled: true, amount: null, label: "Selecione a região", region: null };
   const freeAbove = Number(state.config.FRETE_GRATIS_ACIMA || 0);
-  if (freeAbove > 0 && subtotal >= freeAbove) return 0;
-  return Math.max(0, fixed);
+  if (freeAbove > 0 && subtotal >= freeAbove) return { enabled: true, amount: 0, label: "Grátis", region };
+  return { enabled: true, amount: region.amount, label: money(region.amount), region };
+}
+
+function renderShippingRegions() {
+  const box = $("#shippingRegionBox");
+  const select = $("#shippingRegion");
+  const row = $("#cartShippingRow");
+  if (!box || !select || !row) return;
+  const enabled = shippingEnabled();
+  box.hidden = !enabled;
+  row.hidden = !enabled;
+  if (!enabled) { state.shippingRegion = ""; localStorage.removeItem("fitlyneShippingRegion"); return; }
+  const regions = shippingRegions();
+  select.innerHTML = '<option value="">Selecione sua região</option>' + regions.map((region) => `<option value="${region.id}">${esc(region.label)} — ${money(region.amount)}</option>`).join("");
+  if (!regions.some((region) => region.id === state.shippingRegion)) state.shippingRegion = "";
+  select.value = state.shippingRegion;
 }
 
 function deliveryText() {
@@ -444,13 +483,14 @@ function renderCart() {
         </div></article>`).join("")
     : '<div class="cart-empty">Seu carrinho está vazio.</div>';
   const subtotal = cartProducts.reduce((sum, item) => sum + Number(item.product.PRECO_VENDA || 0) * Number(item.quantity || 0), 0);
+  renderShippingRegions();
   const shipping = shippingFor(subtotal);
-  const total = subtotal + shipping;
+  const total = subtotal + (shipping.amount || 0);
   $("#cartSubtotal").textContent = money(subtotal);
-  $("#cartShipping").textContent = shipping > 0 ? money(shipping) : (subtotal > 0 ? "Grátis" : money(0));
-  $("#cartTotal").textContent = money(total);
-  $("#cartDelivery").textContent = cartProducts.length ? deliveryText() : "";
-  $("#checkoutWhatsApp").disabled = !cartProducts.length;
+  $("#cartShipping").textContent = shipping.label;
+  $("#cartTotal").textContent = shipping.enabled && shipping.amount === null ? `${money(subtotal)} + frete` : money(total);
+  $("#cartDelivery").textContent = cartProducts.length ? (shipping.enabled && !shipping.region ? "Selecione a região para calcular o frete e a entrega." : deliveryText()) : "";
+  $("#checkoutWhatsApp").disabled = !cartProducts.length || (shipping.enabled && !shipping.region);
 }
 
 function openCart() {
@@ -482,11 +522,16 @@ function checkoutWhatsApp() {
   });
   const subtotal = cartProducts.reduce((sum, item) => sum + Number(item.product.PRECO_VENDA || 0) * Number(item.quantity || 0), 0);
   const shipping = shippingFor(subtotal);
-  const total = subtotal + shipping;
+  if (shipping.enabled && !shipping.region) return toast("Selecione Belém, Ananindeua ou Marituba para calcular o frete.");
+  const total = subtotal + (shipping.amount || 0);
   const note = $("#cartNote").value.trim();
+  const shippingLines = shipping.enabled ? [
+    `Entrega: ${shipping.region.label}`,
+    `Frete: ${shipping.label}`
+  ] : [];
   const message = [
     `Olá! Gostaria de solicitar estes produtos da ${state.config.NOME_LOJA || C.STORE_NAME}:`,
-    "", ...lines, "", `Subtotal: ${money(subtotal)}`, `Frete: ${shipping > 0 ? money(shipping) : "Grátis"}`, `Total estimado: ${money(total)}`, `Prazo: ${deliveryText()}`,
+    "", ...lines, "", `Subtotal: ${money(subtotal)}`, ...shippingLines, `Total estimado: ${money(total)}`, shipping.enabled ? `Prazo: ${deliveryText()}` : "",
     note ? `Observação: ${note}` : "", "",
     "Pode confirmar a disponibilidade e as formas de pagamento?"
   ].filter(Boolean).join("\n");
@@ -516,6 +561,12 @@ $("#requestForm").onsubmit = submitRequest;
 $("#openCart").onclick = openCart;
 $("#closeCart").onclick = closeCart;
 $("#cartBackdrop").onclick = closeCart;
+$("#shippingRegion").onchange = (event) => {
+  state.shippingRegion = event.target.value;
+  if (state.shippingRegion) localStorage.setItem("fitlyneShippingRegion", state.shippingRegion);
+  else localStorage.removeItem("fitlyneShippingRegion");
+  renderCart();
+};
 $("#checkoutWhatsApp").onclick = checkoutWhatsApp;
 
 load().catch((error) => {

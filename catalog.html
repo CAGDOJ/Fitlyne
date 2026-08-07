@@ -7,7 +7,7 @@
   <title>Catálogo FITLYNE</title>
   <link rel="icon" href="./favicon.ico" sizes="any">
   <link rel="icon" type="image/svg+xml" href="./assets/icon.svg">
-  <link rel="stylesheet" href="catalog.css?v=2026-08-06-loja-pro">
+  <link rel="stylesheet" href="catalog.css?v=2026-08-06-loja-pro-v2">
 </head>
 <body>
   <header class="catalog-header">
@@ -92,9 +92,16 @@
     <div id="cartItems" class="cart-items"></div>
 
     <div class="cart-footer">
+      <div id="shippingRegionBox" class="shipping-region-box" hidden>
+        <label for="shippingRegion">Local da entrega</label>
+        <select id="shippingRegion">
+          <option value="">Selecione sua região</option>
+        </select>
+        <small id="shippingRegionHelp">O frete é calculado conforme a região selecionada.</small>
+      </div>
       <div class="cart-totals">
         <div><span>Subtotal</span><strong id="cartSubtotal">R$ 0,00</strong></div>
-        <div><span>Frete</span><strong id="cartShipping">R$ 0,00</strong></div>
+        <div id="cartShippingRow"><span>Frete</span><strong id="cartShipping">—</strong></div>
         <div class="cart-summary"><span>Total estimado</span><strong id="cartTotal">R$ 0,00</strong></div>
         <small id="cartDelivery" class="delivery-estimate"></small>
       </div>
@@ -109,6 +116,6 @@
   <div id="cartBackdrop" class="cart-backdrop"></div>
 
   <div id="toast"></div>
-  <script src="./bootstrap.js?v=2026-08-06-loja-pro" data-entry="./catalog.js"></script>
+  <script src="./bootstrap.js?v=2026-08-06-loja-pro-v2" data-entry="./catalog.js"></script>
 </body>
 </html>

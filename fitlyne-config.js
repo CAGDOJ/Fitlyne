@@ -6,8 +6,8 @@
  * app.js e catalog.js leem automaticamente este arquivo.
  */
 window.FITLYNE_CONFIG = Object.freeze({
-  BUILD: "2026-08-06-loja-pro",
-  API_URL: "https://script.google.com/macros/s/AKfycbxsea_d2uMckXf5zqHrHZmO5D1ZJC8ZnGCoMcVp0FQb2mSShbsuksvJePpn_i-xlVyH4Q/exec",
+  BUILD: "2026-08-07-loja-pro-v4-grupos-explicitos",
+  API_URL: "https://script.google.com/macros/s/AKfycbyuGoBjtRh4lxGarDYw35hlJ_XCjCbQRwyvbS4kuzelvTbsUlMSKb5-DJyZabCEklzi6Q/exec",
   CLOUDINARY_CLOUD_NAME: "v9gfcyqm",
   CLOUDINARY_UPLOAD_PRESET: "fitlyne_upload",
   CLOUDINARY_WATERMARK_PUBLIC_ID: "",

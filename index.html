@@ -8,7 +8,7 @@
   <link rel="icon" href="./favicon.ico" sizes="any">
   <link rel="icon" type="image/svg+xml" href="./assets/icon.svg">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="styles.css?v=2026-08-06-loja-pro">
+  <link rel="stylesheet" href="styles.css?v=2026-08-06-loja-pro-v2">
 </head>
 <body class="guest">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -129,6 +129,12 @@
         <label>Cor, tom ou variação
           <input id="colorTone" placeholder="Ex.: Preto, Rosa, Bege 3">
         </label>
+        <label>Agrupar no catálogo com
+          <select id="catalogGroup">
+            <option value="">Não agrupar — produto independente</option>
+          </select>
+          <small class="field-help">Use apenas quando forem variações do mesmo produto. Ex.: Pó Compacto Cor 01 e Cor 02. Gloss diferentes devem ficar sem agrupamento.</small>
+        </label>
         <label>Preço de compra
           <input id="purchasePrice" type="number" step="0.01" min="0" inputmode="decimal">
         </label>
@@ -214,6 +220,10 @@
       <div class="page-title"><div><h1>Estoque</h1><p>Entradas, saídas, perdas e devoluções</p></div></div>
       <form id="stockForm" class="card form-grid">
         <label>Produto<select id="stockProduct" required></select></label>
+        <label id="stockVariantLabel">Modelo / variação
+          <select id="stockVariant"><option value="">Selecione o produto primeiro</option></select>
+          <small class="field-help">Quando o produto tiver tamanhos/modelos separados, escolha exatamente qual estoque será movimentado.</small>
+        </label>
         <label>Tipo
           <select id="stockType">
             <option value="ENTRADA">Entrada</option>
@@ -236,8 +246,20 @@
       <form id="saleForm" class="card form-grid">
         <input id="saleEditId" type="hidden">
         <label>Produto<select id="saleProduct" required></select></label>
+        <label id="saleVariantLabel">Modelo / variação
+          <select id="saleVariant"><option value="">Selecione o produto primeiro</option></select>
+          <small class="field-help">Escolha exatamente a cor, tamanho ou modelo que saiu.</small>
+        </label>
         <label>Quantidade<input id="saleQty" type="number" min="1" value="1" required inputmode="numeric"></label>
-        <label>Cliente<input id="saleClient" placeholder="Nome da cliente"></label>
+        <label>Cliente cadastrada
+          <select id="saleKnownClient"><option value="">Nova cliente / digitar nome</option></select>
+          <small class="field-help">Selecione uma cliente existente para preencher nome e WhatsApp automaticamente.</small>
+        </label>
+        <label>Cliente
+          <input id="saleClient" list="saleClientOptions" placeholder="Digite ou escolha uma cliente">
+          <datalist id="saleClientOptions"></datalist>
+          <small class="field-help">Clientes já cadastradas aparecem como sugestão. Ao escolher uma, o WhatsApp é preenchido automaticamente.</small>
+        </label>
         <label>WhatsApp<input id="salePhone" inputmode="tel" placeholder="5591..."></label>
         <label>Desconto<input id="saleDiscount" type="number" min="0" step="0.01" value="0" inputmode="decimal"></label>
         <label>Pagamento
@@ -303,15 +325,25 @@
         <label>Subtítulo
           <input id="storeSubtitleInput" maxlength="100" placeholder="Moda Fitness, Makeup & Skincare">
         </label>
-        <label>Frete fixo (R$)
-          <input id="fixedShipping" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00">
-        </label>
-        <label>Frete grátis acima de (R$)
-          <input id="freeShippingAbove" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0 = desativado">
-        </label>
-        <label>Prazo estimado de entrega (dias)
-          <input id="deliveryDays" type="number" min="0" max="60" inputmode="numeric" placeholder="3">
-        </label>
+        <label class="checkbox full shipping-toggle"><input id="shippingEnabled" type="checkbox"> Ativar cálculo de frete no catálogo</label>
+        <div class="full shipping-settings-grid" id="shippingSettingsBox">
+          <label>Belém (R$)
+            <input id="shippingBelem" type="number" min="0" step="0.01" inputmode="decimal" placeholder="10,00">
+            <small class="field-help">Valor 0 desativa esta região — não será exibido como grátis.</small>
+          </label>
+          <label>Ananindeua (R$)
+            <input id="shippingAnanindeua" type="number" min="0" step="0.01" inputmode="decimal" placeholder="15,00">
+          </label>
+          <label>Marituba (R$)
+            <input id="shippingMarituba" type="number" min="0" step="0.01" inputmode="decimal" placeholder="15,00">
+          </label>
+          <label>Frete grátis acima de (R$)
+            <input id="freeShippingAbove" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0 = desativado">
+          </label>
+          <label>Prazo estimado de entrega (dias)
+            <input id="deliveryDays" type="number" min="0" max="60" inputmode="numeric" placeholder="3">
+          </label>
+        </div>
         <label>Instagram (opcional)
           <input id="storeInstagram" maxlength="120" placeholder="@fitlyne ou link do Instagram">
         </label>
@@ -348,7 +380,7 @@
     </section>
 
   </main>
-  <script src="./bootstrap.js?v=2026-08-06-loja-pro" data-entry="./app.js"></script>
+  <script src="./bootstrap.js?v=2026-08-06-loja-pro-v2" data-entry="./app.js"></script>
 </body>
 </html>
 

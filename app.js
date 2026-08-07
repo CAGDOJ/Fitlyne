@@ -105,6 +105,118 @@ function saleIsActive(sale) {
   return !["CANCELADA", "CANCELADO", "EXCLUIDA", "EXCLUÍDA"].includes(String(sale?.STATUS || "ATIVA").trim().toUpperCase());
 }
 
+
+function normalizeClientName(value) {
+  return String(value || "").trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
+}
+
+function consolidatedClients() {
+  const map = new Map();
+  (state.clients || []).forEach((client) => {
+    const nameKey = normalizeClientName(client.NOME);
+    const phoneKey = String(client.TELEFONE || "").replace(/\D/g, "");
+    const key = nameKey ? `N:${nameKey}` : `P:${phoneKey}`;
+    if (!key || key === "P:") return;
+    if (!map.has(key)) map.set(key, { ...client, COMPRAS: 0, TOTAL_GASTO: 0 });
+    const target = map.get(key);
+    target.COMPRAS += numberValue(client.COMPRAS);
+    target.TOTAL_GASTO += numberValue(client.TOTAL_GASTO);
+    if (client.TELEFONE) target.TELEFONE = client.TELEFONE;
+    if (client.NOME) target.NOME = client.NOME;
+  });
+  return [...map.values()].sort((a, b) => String(a.NOME || "").localeCompare(String(b.NOME || ""), "pt-BR"));
+}
+
+function productVariants(productId) {
+  return state.variants.filter((variant) => sameId(variant.ID_PRODUTO, productId));
+}
+
+function catalogGroupRoot(product) {
+  return String(product?.GRUPO_CATALOGO || product?.ID || "").trim();
+}
+
+function populateCatalogGroupSelect(currentProductId = "", selectedGroup = "") {
+  const select = $("#catalogGroup");
+  if (!select) return;
+  const groups = new Map();
+  state.products.filter(isProductActive).forEach((product) => {
+    if (sameId(product.ID, currentProductId)) return;
+    const root = catalogGroupRoot(product);
+    if (!root || sameId(root, currentProductId)) return;
+    if (!groups.has(root)) groups.set(root, product);
+  });
+  const current = String(selectedGroup || "").trim();
+  select.innerHTML = '<option value="">Não agrupar — produto independente</option>' + [...groups.entries()].map(([root, product]) => {
+    const label = [product.NOME, product.MARCA, product.COR_TOM].filter(Boolean).join(" · ");
+    return `<option value="${escapeHtml(root)}">Agrupar com ${escapeHtml(label || product.SKU || root)}</option>`;
+  }).join("");
+  if (current && [...select.options].some((option) => sameId(option.value, current))) select.value = current;
+  else select.value = "";
+}
+
+function variantLabel(variant) {
+  const raw = String(variant?.MODELO || variant?.VALOR || variant?.TAMANHO || "").trim();
+  const normalized = normalizeClientName(raw);
+  return !raw || ["NA", "N/A", "PADRAO"].includes(normalized) ? "Padrão" : raw;
+}
+
+function fillVariantSelect(select, productId, selectedId = "") {
+  if (!select) return null;
+  const variants = productVariants(productId);
+  if (!productId) {
+    select.innerHTML = '<option value="">Selecione o produto primeiro</option>';
+    select.disabled = true;
+    return null;
+  }
+  if (!variants.length) {
+    select.innerHTML = '<option value="">Sem variação</option>';
+    select.disabled = true;
+    return null;
+  }
+  if (variants.length === 1) {
+    const variant = variants[0];
+    select.innerHTML = `<option value="${escapeHtml(variant.ID)}">${escapeHtml(variantLabel(variant))} — estoque ${numberValue(variant.ESTOQUE)}</option>`;
+    select.value = String(variant.ID);
+    select.disabled = true;
+    return variant;
+  }
+  select.disabled = false;
+  select.innerHTML = '<option value="">Selecione o modelo / variação</option>' + variants.map((variant) => `<option value="${escapeHtml(variant.ID)}">${escapeHtml(variantLabel(variant))} — estoque ${numberValue(variant.ESTOQUE)}</option>`).join("");
+  if (selectedId && variants.some((variant) => sameId(variant.ID, selectedId))) select.value = String(selectedId);
+  return variants.find((variant) => sameId(variant.ID, select.value)) || null;
+}
+
+function populateSaleVariantSelect(selectedId = "") {
+  return fillVariantSelect($("#saleVariant"), $("#saleProduct")?.value || "", selectedId);
+}
+
+function populateStockVariantSelect(selectedId = "") {
+  return fillVariantSelect($("#stockVariant"), $("#stockProduct")?.value || "", selectedId);
+}
+
+function populateClientSuggestions() {
+  const clients = consolidatedClients();
+  const datalist = $("#saleClientOptions");
+  if (datalist) datalist.innerHTML = clients.map((client) => `<option value="${escapeHtml(client.NOME || "")}">${escapeHtml(client.TELEFONE || "")} · ${client.COMPRAS || 0} compras · ${money(client.TOTAL_GASTO)}</option>`).join("");
+  const select = $("#saleKnownClient");
+  if (select) {
+    const current = select.value;
+    select.innerHTML = '<option value="">Nova cliente / digitar nome</option>' + clients.map((client) => `<option value="${escapeHtml(client.ID || client.NOME || "")}">${escapeHtml(client.NOME || "Cliente")} · ${client.COMPRAS || 0} compras · ${money(client.TOTAL_GASTO)}</option>`).join("");
+    if ([...select.options].some((option) => option.value === current)) select.value = current;
+  }
+}
+
+function applyKnownClient(client) {
+  if (!client) return;
+  $("#saleClient").value = client.NOME || "";
+  $("#salePhone").value = client.TELEFONE || "";
+}
+
+function findClientByTypedName(name) {
+  const key = normalizeClientName(name);
+  return consolidatedClients().find((client) => normalizeClientName(client.NOME) === key) || null;
+}
+
 function normalizeLoadedData(data) {
   state.products = Array.isArray(data.products) ? data.products.map((product) => ({ ...product, ID: String(product.ID ?? "").trim(), NICHO: normalizedNiche(product.NICHO) })) : [];
   state.photos = Array.isArray(data.photos) ? data.photos.map((photo) => ({
@@ -504,6 +616,13 @@ function renderProducts() {
     const rawSelected = String(product.STATUS_CATALOGO || "AUTOMATICO").trim().toUpperCase();
     const selected = STATUS_OPTIONS.some(([value]) => value === rawSelected) ? rawSelected : "AUTOMATICO";
     const photo = productPhotoData(product.ID);
+    const groupParent = product.GRUPO_CATALOGO ? state.products.find((entry) => sameId(entry.ID, product.GRUPO_CATALOGO)) : null;
+    const groupedChildren = state.products.filter((entry) => sameId(entry.GRUPO_CATALOGO, product.ID));
+    const groupText = product.GRUPO_CATALOGO
+      ? `Agrupado com ${groupParent?.NOME || product.GRUPO_CATALOGO}`
+      : groupedChildren.length
+        ? `Produto principal de ${groupedChildren.length + 1} opções`
+        : "Produto independente";
     return `<article class="product-card${product.__LOCAL_PENDING ? " local-pending" : ""}" data-product-id="${escapeHtml(product.ID)}">
       ${imageTag(photo, product.NOME, "product-image")}
       <div class="product-card-body">
@@ -511,6 +630,7 @@ function renderProducts() {
         <h3>${escapeHtml(product.NOME)}</h3>
         <p class="product-code">${escapeHtml(product.SKU || "Código pendente")}</p>
         <p>${product.COR_TOM ? `<b>Variação:</b> ${escapeHtml(product.COR_TOM)}` : "Sem variação de cor/tom"}${product.TAMANHO_EXIBICAO ? ` · ${escapeHtml(product.TAMANHO_EXIBICAO)}` : ""}</p>
+        <p class="muted"><b>Exibição:</b> ${escapeHtml(groupText)}</p>
         <p class="price">${money(product.PRECO_VENDA)}</p>
         <p>Estoque interno: <b>${numberValue(product.ESTOQUE_ATUAL)}</b></p>
         <label class="quick-status-label">Status no catálogo
@@ -588,6 +708,7 @@ function resetProductForm() {
   $("#sizeFrom").value = 36;
   $("#sizeTo").value = 40;
   $("#catalogStatus").value = "AUTOMATICO";
+  populateCatalogGroupSelect();
   $("#activeProduct").checked = true;
   $("#photoPreview").innerHTML = "";
   $("#sizeChips").innerHTML = "";
@@ -755,6 +876,7 @@ function saveProduct(event) {
     NOME: $("#productName").value.trim(),
     DESCRICAO: $("#description").value.trim(),
     COR_TOM: $("#colorTone").value.trim(),
+    GRUPO_CATALOGO: $("#catalogGroup")?.value || "",
     TIPO_TAMANHO: $('input[name="sizeMode"]:checked').value,
     TAMANHO_EXIBICAO: sizeDisplay(),
     PRECO_COMPRA: Number($("#purchasePrice").value || 0),
@@ -834,8 +956,16 @@ function saveProduct(event) {
 
 function populateProductSelects() {
   const options = '<option value="">Selecione</option>' + state.products.filter(isProductActive).map((product) => `<option value="${product.ID}">${escapeHtml(product.SKU || "")} · ${escapeHtml(product.NOME)}${product.COR_TOM ? ` · ${escapeHtml(product.COR_TOM)}` : ""} — estoque ${numberValue(product.ESTOQUE_ATUAL)}</option>`).join("");
+  const stockCurrent = $("#stockProduct")?.value || "";
+  const saleCurrent = $("#saleProduct")?.value || "";
   $("#stockProduct").innerHTML = options;
   $("#saleProduct").innerHTML = options;
+  if ([...$("#stockProduct").options].some((option) => option.value === stockCurrent)) $("#stockProduct").value = stockCurrent;
+  if ([...$("#saleProduct").options].some((option) => option.value === saleCurrent)) $("#saleProduct").value = saleCurrent;
+  populateStockVariantSelect();
+  populateSaleVariantSelect();
+  populateClientSuggestions();
+  populateCatalogGroupSelect(state.editingId || "", $("#catalogGroup")?.value || "");
 }
 
 function saveStock(event) {
@@ -848,47 +978,48 @@ function saveStock(event) {
   if (!product) return toast("Selecione um produto.");
   if (!Number.isFinite(qty) || qty < 0 || (type !== "AJUSTE" && qty === 0)) return toast("Informe uma quantidade válida.");
 
+  const variants = productVariants(productId);
+  const variantId = $("#stockVariant").value || (variants.length === 1 ? variants[0].ID : "");
+  if (variants.length > 1 && !variantId) return toast("Selecione o modelo / variação do estoque.");
+  const variant = variants.find((entry) => sameId(entry.ID, variantId)) || null;
   const oldStock = numberValue(product.ESTOQUE_ATUAL);
+  const oldVariantStock = variant ? numberValue(variant.ESTOQUE) : null;
   let next = oldStock;
-  if (type === "ENTRADA" || type === "DEVOLUCAO") next += qty;
-  else if (type === "SAIDA" || type === "PERDA") next -= qty;
-  else if (type === "AJUSTE") next = qty;
-  if (next < 0) return toast("Estoque insuficiente.");
+  let variantNext = oldVariantStock;
+
+  if (variant) {
+    if (type === "ENTRADA" || type === "DEVOLUCAO") { next += qty; variantNext += qty; }
+    else if (type === "SAIDA" || type === "PERDA") { next -= qty; variantNext -= qty; }
+    else if (type === "AJUSTE") { next += qty - oldVariantStock; variantNext = qty; }
+  } else {
+    if (type === "ENTRADA" || type === "DEVOLUCAO") next += qty;
+    else if (type === "SAIDA" || type === "PERDA") next -= qty;
+    else if (type === "AJUSTE") next = qty;
+  }
+  if (next < 0 || (variant && variantNext < 0)) return toast("Estoque insuficiente.");
 
   const tempId = uid("LOCAL_MOV");
-  const tempMovement = { ID: tempId, DATA: new Date().toISOString(), ID_PRODUTO: product.ID, PRODUTO: product.NOME, TIPO: type, QUANTIDADE: qty, MOTIVO: reason, __LOCAL_PENDING: true };
+  const tempMovement = { ID: tempId, DATA: new Date().toISOString(), ID_PRODUTO: product.ID, PRODUTO: product.NOME, ID_VARIACAO: variant?.ID || "", VARIACAO: variant ? variantLabel(variant) : "", TIPO: type, QUANTIDADE: qty, MOTIVO: reason, __LOCAL_PENDING: true };
   product.ESTOQUE_ATUAL = next;
+  if (variant) variant.ESTOQUE = variantNext;
   state.movements.unshift(tempMovement);
-  saveAdminSnapshot();
-  populateProductSelects();
-  renderCurrentStock();
-  renderMovements();
-  renderDashboard();
-  event.target.reset();
+  saveAdminSnapshot(); populateProductSelects(); renderCurrentStock(); renderMovements(); renderDashboard();
+  $("#stockQty").value = ""; $("#stockReason").value = "";
   toast("Estoque atualizado.");
 
   const sync = beginSync("Salvando estoque...");
-  api("stockMovement", { productId, type, qty, reason }).then((result) => {
+  api("stockMovement", { productId, variantId, type, qty, reason }).then((result) => {
     if (result?.product) Object.assign(product, result.product);
+    if (result?.variant) { const localVariant = state.variants.find((entry) => sameId(entry.ID, result.variant.ID)); if (localVariant) Object.assign(localVariant, result.variant); }
     state.movements = state.movements.filter((entry) => !sameId(entry.ID, tempId));
     if (result?.movement) state.movements.unshift(result.movement);
-    saveAdminSnapshot();
-    populateProductSelects();
-    renderCurrentStock();
-    renderMovements();
-    renderDashboard();
-    sync.success("Estoque salvo");
+    saveAdminSnapshot(); populateProductSelects(); renderCurrentStock(); renderMovements(); renderDashboard(); sync.success("Estoque salvo");
     if (result?.notifications?.ready) toast(`${result.notifications.ready} cliente(s) aguardando este produto.`);
   }).catch((error) => {
     product.ESTOQUE_ATUAL = oldStock;
+    if (variant && oldVariantStock !== null) variant.ESTOQUE = oldVariantStock;
     state.movements = state.movements.filter((entry) => !sameId(entry.ID, tempId));
-    saveAdminSnapshot();
-    populateProductSelects();
-    renderCurrentStock();
-    renderMovements();
-    renderDashboard();
-    sync.error("Falha ao salvar estoque");
-    toast(`Alteração desfeita: ${error.message}`);
+    saveAdminSnapshot(); populateProductSelects(); renderCurrentStock(); renderMovements(); renderDashboard(); sync.error("Falha ao salvar estoque"); toast(`Alteração desfeita: ${error.message}`);
   });
 }
 
@@ -905,7 +1036,7 @@ function renderCurrentStock() {
 }
 
 function renderMovements() {
-  $("#movementList").innerHTML = state.movements.slice(0, 30).map((movement) => `<div class="list-item"><div><b>${escapeHtml(movement.PRODUTO)}</b><small>${escapeHtml(movement.TIPO)} · ${escapeHtml(movement.MOTIVO || "")}</small></div><span class="amount">${movement.QUANTIDADE}${movement.__LOCAL_PENDING ? ' <small class="saving-inline">salvando</small>' : ""}</span></div>`).join("") || '<p class="muted">Sem movimentações.</p>';
+  $("#movementList").innerHTML = state.movements.slice(0, 30).map((movement) => `<div class="list-item"><div><b>${escapeHtml(movement.PRODUTO)}</b><small>${movement.VARIACAO ? `${escapeHtml(movement.VARIACAO)} · ` : ""}${escapeHtml(movement.TIPO)} · ${escapeHtml(movement.MOTIVO || "")}</small></div><span class="amount">${movement.QUANTIDADE}${movement.__LOCAL_PENDING ? ' <small class="saving-inline">salvando</small>' : ""}</span></div>`).join("") || '<p class="muted">Sem movimentações.</p>';
 }
 
 function resetSaleForm() {
@@ -913,8 +1044,10 @@ function resetSaleForm() {
   $("#saleQty").value = 1;
   $("#saleDiscount").value = 0;
   $("#saleEditId").value = "";
+  if ($("#saleKnownClient")) $("#saleKnownClient").value = "";
   $("#saveSaleBtn").textContent = "Finalizar venda";
   $("#cancelSaleEdit").hidden = true;
+  populateSaleVariantSelect();
 }
 
 function editSale(id) {
@@ -922,9 +1055,12 @@ function editSale(id) {
   if (!sale || !saleIsActive(sale)) return toast("Venda não disponível para edição.");
   $("#saleEditId").value = sale.ID;
   $("#saleProduct").value = sale.ID_PRODUTO;
+  populateSaleVariantSelect(sale.ID_VARIACAO || "");
   $("#saleQty").value = numberValue(sale.QUANTIDADE);
   $("#saleClient").value = sale.CLIENTE || "";
   $("#salePhone").value = sale.TELEFONE || "";
+  const known = consolidatedClients().find((client) => normalizeClientName(client.NOME) === normalizeClientName(sale.CLIENTE));
+  if ($("#saleKnownClient")) $("#saleKnownClient").value = known?.ID || known?.NOME || "";
   $("#saleDiscount").value = numberValue(sale.DESCONTO);
   $("#paymentMethod").value = sale.PAGAMENTO || "PIX";
   $("#saveSaleBtn").textContent = "Salvar alteração";
@@ -934,71 +1070,117 @@ function editSale(id) {
 
 async function cancelSale(id) {
   const sale = state.sales.find((entry) => sameId(entry.ID, id));
-  if (!sale || !saleIsActive(sale)) return toast("Venda já cancelada.");
-  if (!confirm(`Excluir a venda de ${sale.PRODUTO}? O estoque será devolvido automaticamente.`)) return;
+  if (!sale || !saleIsActive(sale)) return toast("Venda já excluída ou cancelada.");
+  if (!window.confirm(`Excluir a venda de ${sale.PRODUTO}${sale.VARIACAO ? ` · ${sale.VARIACAO}` : ""}? O estoque será devolvido automaticamente.`)) return;
+
+  const oldSale = { ...sale };
+  const product = state.products.find((entry) => sameId(entry.ID, sale.ID_PRODUTO));
+  const variant = sale.ID_VARIACAO ? state.variants.find((entry) => sameId(entry.ID, sale.ID_VARIACAO)) : null;
+  const oldStock = product ? numberValue(product.ESTOQUE_ATUAL) : null;
+  const oldVariantStock = variant ? numberValue(variant.ESTOQUE) : null;
+
+  sale.STATUS = "CANCELADA";
+  sale.__LOCAL_PENDING = true;
+  if (product) product.ESTOQUE_ATUAL = oldStock + numberValue(sale.QUANTIDADE);
+  if (variant) variant.ESTOQUE = oldVariantStock + numberValue(sale.QUANTIDADE);
+  saveAdminSnapshot(); populateProductSelects(); renderSales(); renderCurrentStock(); renderDashboard(); renderFinance(); renderClients();
+  toast("Venda excluída. Confirmando no banco...");
+
   const sync = beginSync("Estornando venda...");
   try {
     const result = await api("cancelSale", { id });
-    Object.assign(sale, result?.sale || { STATUS: "CANCELADA" });
-    if (result?.product) { const product = state.products.find((entry) => sameId(entry.ID, result.product.ID)); if (product) Object.assign(product, result.product); }
+    Object.assign(sale, result?.sale || { STATUS: "CANCELADA" }); delete sale.__LOCAL_PENDING;
+    if (result?.product) { const localProduct = state.products.find((entry) => sameId(entry.ID, result.product.ID)); if (localProduct) Object.assign(localProduct, result.product); }
+    if (result?.variant) { const localVariant = state.variants.find((entry) => sameId(entry.ID, result.variant.ID)); if (localVariant) Object.assign(localVariant, result.variant); }
     if (Array.isArray(result?.clients)) state.clients = result.clients;
-    saveAdminSnapshot(); populateProductSelects(); renderSales(); renderCurrentStock(); renderDashboard(); renderFinance();
+    saveAdminSnapshot(); populateProductSelects(); renderSales(); renderCurrentStock(); renderDashboard(); renderFinance(); renderClients();
     sync.success("Venda excluída"); toast("Venda excluída e estoque estornado.");
-  } catch (error) { sync.error("Falha ao excluir venda"); toast(error.message); }
+  } catch (error) {
+    Object.assign(sale, oldSale); delete sale.__LOCAL_PENDING;
+    if (product && oldStock !== null) product.ESTOQUE_ATUAL = oldStock;
+    if (variant && oldVariantStock !== null) variant.ESTOQUE = oldVariantStock;
+    saveAdminSnapshot(); populateProductSelects(); renderSales(); renderCurrentStock(); renderDashboard(); renderFinance(); renderClients();
+    sync.error("Falha ao excluir venda"); toast(`Não foi possível excluir: ${error.message}`); window.alert(`A venda NÃO foi excluída.\n\n${error.message}`);
+  }
 }
+
+window.cancelSale = cancelSale;
+window.editSale = editSale;
 
 async function saveSale(event) {
   event.preventDefault();
   const editId = $("#saleEditId").value.trim();
   const productId = $("#saleProduct").value;
   const product = state.products.find((entry) => sameId(entry.ID, productId));
+  const variants = productVariants(productId);
+  const variantId = $("#saleVariant").value || (variants.length === 1 ? variants[0].ID : "");
+  const variant = variants.find((entry) => sameId(entry.ID, variantId)) || null;
   const qty = Number($("#saleQty").value || 1);
   const client = $("#saleClient").value.trim();
   const phone = $("#salePhone").value.trim();
   const discount = Number($("#saleDiscount").value || 0);
   const payment = $("#paymentMethod").value;
   if (!product) return toast("Selecione um produto.");
+  if (variants.length > 1 && !variantId) return toast("Selecione qual modelo / variação saiu.");
   if (!Number.isFinite(qty) || qty <= 0) return toast("Informe uma quantidade válida.");
 
   if (editId) {
     const sync = beginSync("Salvando alteração...");
     try {
-      const result = await api("updateSale", { id: editId, productId, qty, client, phone, discount, payment });
+      const result = await api("updateSale", { id: editId, productId, variantId, qty, client, phone, discount, payment });
       const index = state.sales.findIndex((entry) => sameId(entry.ID, editId));
       if (index >= 0 && result?.sale) state.sales[index] = result.sale;
       (result?.products || []).forEach((changed) => { const local = state.products.find((entry) => sameId(entry.ID, changed.ID)); if (local) Object.assign(local, changed); });
+      (result?.variants || []).forEach((changed) => { const local = state.variants.find((entry) => sameId(entry.ID, changed.ID)); if (local) Object.assign(local, changed); });
       if (Array.isArray(result?.clients)) state.clients = result.clients;
-      resetSaleForm(); saveAdminSnapshot(); populateProductSelects(); renderSales(); renderCurrentStock(); renderDashboard(); renderFinance();
+      resetSaleForm(); saveAdminSnapshot(); populateProductSelects(); renderSales(); renderCurrentStock(); renderDashboard(); renderFinance(); renderClients();
       sync.success("Venda atualizada"); toast("Venda atualizada e estoque recalculado.");
     } catch (error) { sync.error("Falha ao editar venda"); toast(error.message); }
     return;
   }
 
   const oldStock = numberValue(product.ESTOQUE_ATUAL);
+  const oldVariantStock = variant ? numberValue(variant.ESTOQUE) : null;
   if (oldStock < qty) return toast("Estoque insuficiente.");
+  if (variant && oldVariantStock < qty) return toast(`Estoque insuficiente para ${variantLabel(variant)}.`);
   const total = Math.max(0, numberValue(product.PRECO_VENDA) * qty - discount);
   const tempSaleId = uid("LOCAL_VENDA");
   const tempMovementId = uid("LOCAL_MOV");
-  const tempSale = { ID: tempSaleId, DATA: new Date().toISOString(), ID_PRODUTO: product.ID, PRODUTO: product.NOME, QUANTIDADE: qty, VALOR_UNITARIO: product.PRECO_VENDA, DESCONTO: discount, TOTAL: total, CLIENTE: client, TELEFONE: phone, PAGAMENTO: payment, STATUS: "ATIVA", __LOCAL_PENDING: true };
-  const tempMovement = { ID: tempMovementId, DATA: new Date().toISOString(), ID_PRODUTO: product.ID, PRODUTO: product.NOME, TIPO: "VENDA", QUANTIDADE: qty, MOTIVO: "VENDA", __LOCAL_PENDING: true };
-  product.ESTOQUE_ATUAL = oldStock - qty; state.sales.unshift(tempSale); state.movements.unshift(tempMovement);
+  const tempSale = { ID: tempSaleId, DATA: new Date().toISOString(), ID_PRODUTO: product.ID, PRODUTO: product.NOME, ID_VARIACAO: variant?.ID || "", VARIACAO: variant ? variantLabel(variant) : "", QUANTIDADE: qty, VALOR_UNITARIO: product.PRECO_VENDA, DESCONTO: discount, TOTAL: total, CLIENTE: client, TELEFONE: phone, PAGAMENTO: payment, STATUS: "ATIVA", __LOCAL_PENDING: true };
+  const tempMovement = { ID: tempMovementId, DATA: new Date().toISOString(), ID_PRODUTO: product.ID, PRODUTO: product.NOME, ID_VARIACAO: variant?.ID || "", VARIACAO: variant ? variantLabel(variant) : "", TIPO: "VENDA", QUANTIDADE: qty, MOTIVO: "VENDA", __LOCAL_PENDING: true };
+  product.ESTOQUE_ATUAL = oldStock - qty;
+  if (variant) variant.ESTOQUE = oldVariantStock - qty;
+  state.sales.unshift(tempSale); state.movements.unshift(tempMovement);
   saveAdminSnapshot(); populateProductSelects(); renderSales(); renderCurrentStock(); renderDashboard(); resetSaleForm(); toast(`Venda registrada: ${money(total)}.`);
   const sync = beginSync("Salvando venda...");
-  api("saveSale", { productId, qty, client, phone, discount, payment }).then((result) => {
+  api("saveSale", { productId, variantId, qty, client, phone, discount, payment }).then((result) => {
     state.sales = state.sales.filter((entry) => !sameId(entry.ID, tempSaleId)); state.movements = state.movements.filter((entry) => !sameId(entry.ID, tempMovementId));
     if (result?.sale) state.sales.unshift(result.sale); if (result?.movement) state.movements.unshift(result.movement); if (result?.product) Object.assign(product, result.product);
-    saveAdminSnapshot(); populateProductSelects(); renderSales(); renderCurrentStock(); renderDashboard(); sync.success("Venda salva");
+    if (result?.variant) { const localVariant = state.variants.find((entry) => sameId(entry.ID, result.variant.ID)); if (localVariant) Object.assign(localVariant, result.variant); }
+    if (Array.isArray(result?.clients)) state.clients = result.clients;
+    saveAdminSnapshot(); populateProductSelects(); renderSales(); renderCurrentStock(); renderDashboard(); renderClients(); sync.success("Venda salva");
   }).catch((error) => {
-    product.ESTOQUE_ATUAL = oldStock; state.sales = state.sales.filter((entry) => !sameId(entry.ID, tempSaleId)); state.movements = state.movements.filter((entry) => !sameId(entry.ID, tempMovementId));
-    saveAdminSnapshot(); populateProductSelects(); renderSales(); renderCurrentStock(); renderDashboard(); sync.error("Falha ao salvar venda"); toast(`Venda desfeita: ${error.message}`);
+    product.ESTOQUE_ATUAL = oldStock; if (variant && oldVariantStock !== null) variant.ESTOQUE = oldVariantStock;
+    state.sales = state.sales.filter((entry) => !sameId(entry.ID, tempSaleId)); state.movements = state.movements.filter((entry) => !sameId(entry.ID, tempMovementId));
+    saveAdminSnapshot(); populateProductSelects(); renderSales(); renderCurrentStock(); renderDashboard(); renderClients(); sync.error("Falha ao salvar venda"); toast(`Venda desfeita: ${error.message}`);
   });
 }
 
 function renderSales() {
-  $("#salesList").innerHTML = state.sales.slice(0, 50).map((sale) => {
-    const active = saleIsActive(sale);
-    return `<div class="list-item sale-row ${active ? "" : "cancelled-sale"}"><div><b>${escapeHtml(sale.PRODUTO)}</b><small>${escapeHtml(sale.CLIENTE || "Sem cliente")} · ${escapeHtml(sale.PAGAMENTO)} · ${numberValue(sale.QUANTIDADE)} un. ${active ? "" : "· CANCELADA"}</small></div><div class="sale-actions"><span class="amount ${active ? "positive" : ""}">${money(sale.TOTAL)}${sale.__LOCAL_PENDING ? ' <small class="saving-inline">salvando</small>' : ""}</span>${active && !sale.__LOCAL_PENDING ? `<button type="button" class="ghost compact" data-sale-action="edit" data-id="${escapeHtml(sale.ID)}">Editar</button><button type="button" class="danger compact" data-sale-action="delete" data-id="${escapeHtml(sale.ID)}">Excluir</button>` : ""}</div></div>`;
-  }).join("") || '<p class="muted">Sem vendas.</p>';
+  const activeSales = state.sales.filter(saleIsActive).slice(0, 50);
+  const cancelledCount = state.sales.filter((sale) => !saleIsActive(sale)).length;
+  $("#salesList").innerHTML = activeSales.map((sale) => `
+    <div class="list-item sale-row">
+      <div>
+        <b>${escapeHtml(sale.PRODUTO)}${sale.VARIACAO ? `<span class="variant-chip-inline">${escapeHtml(sale.VARIACAO)}</span>` : ""}</b>
+        <small>${escapeHtml(sale.CLIENTE || "Sem cliente")} · ${escapeHtml(sale.PAGAMENTO)} · ${numberValue(sale.QUANTIDADE)} un.</small>
+      </div>
+      <div class="sale-actions">
+        <span class="amount positive">${money(sale.TOTAL)}${sale.__LOCAL_PENDING ? ' <small class="saving-inline">salvando</small>' : ""}</span>
+        ${sale.__LOCAL_PENDING ? "" : `<div class="sale-action-buttons"><span class="action-label">Ações</span><button type="button" class="ghost compact" onclick="editSale('${escapeHtml(sale.ID)}')">Editar</button><button type="button" class="danger compact" onclick="cancelSale('${escapeHtml(sale.ID)}')">Excluir</button></div>`}
+      </div>
+    </div>`).join("") || '<p class="muted">Sem vendas.</p>';
+  if (cancelledCount) $("#salesList").insertAdjacentHTML("beforeend", `<p class="muted cancelled-history-note">${cancelledCount} venda${cancelledCount === 1 ? "" : "s"} cancelada${cancelledCount === 1 ? "" : "s"} preservada${cancelledCount === 1 ? "" : "s"} no histórico interno.</p>`);
 }
 
 
@@ -1199,7 +1381,9 @@ async function testWhatsappApi() {
 }
 
 function renderClients() {
-  $("#clientsList").innerHTML = state.clients.map((client) => `<div class="list-item"><div><b>${escapeHtml(client.NOME)}</b><small>${escapeHtml(client.TELEFONE || "")} · ${client.COMPRAS || 0} compras</small></div><span>${money(client.TOTAL_GASTO)}</span></div>`).join("") || '<p class="muted">Sem clientes.</p>';
+  const clients = consolidatedClients();
+  $("#clientsList").innerHTML = clients.map((client) => `<div class="list-item"><div class="client-summary"><div><span class="client-name">${escapeHtml(client.NOME || "Cliente")}</span><small class="client-phone">${escapeHtml(client.TELEFONE || "Sem WhatsApp")} · ${client.COMPRAS || 0} compra${Number(client.COMPRAS || 0) === 1 ? "" : "s"}</small></div></div><span>${money(client.TOTAL_GASTO)}</span></div>`).join("") || '<p class="muted">Sem clientes.</p>';
+  populateClientSuggestions();
 }
 
 function saveExpense(event) {
@@ -1239,13 +1423,27 @@ function renderFinance() {
   $("#expensesList").innerHTML = state.expenses.slice(0, 30).map((expense) => `<div class="list-item"><div><b>${escapeHtml(expense.DESCRICAO)}</b><small>${escapeHtml(expense.CATEGORIA || "")}</small></div><span class="amount negative">${money(expense.VALOR)}${expense.__LOCAL_PENDING ? ' <small class="saving-inline">salvando</small>' : ""}</span></div>`).join("") || '<p class="muted">Sem despesas.</p>';
 }
 
+function toggleShippingSettings() {
+  const enabled = Boolean($("#shippingEnabled")?.checked);
+  const box = $("#shippingSettingsBox");
+  if (box) box.classList.toggle("shipping-disabled", !enabled);
+  ["#shippingBelem", "#shippingAnanindeua", "#shippingMarituba", "#freeShippingAbove", "#deliveryDays"].forEach((selector) => {
+    const input = $(selector);
+    if (input) input.disabled = !enabled;
+  });
+}
+
 function renderSettings() {
   $("#storeWhatsapp").value = state.config.WHATSAPP || "";
   $("#storeNameInput").value = state.config.NOME_LOJA || C.STORE_NAME;
   $("#storeSubtitleInput").value = state.config.SUBTITULO || C.STORE_SUBTITLE;
-  $("#fixedShipping").value = numberValue(state.config.FRETE_FIXO);
+  $("#shippingEnabled").checked = String(state.config.FRETE_ATIVO || "NAO").trim().toUpperCase() === "SIM";
+  $("#shippingBelem").value = numberValue(state.config.FRETE_BELEM || 10);
+  $("#shippingAnanindeua").value = numberValue(state.config.FRETE_ANANINDEUA || 15);
+  $("#shippingMarituba").value = numberValue(state.config.FRETE_MARITUBA || 15);
   $("#freeShippingAbove").value = numberValue(state.config.FRETE_GRATIS_ACIMA);
   $("#deliveryDays").value = numberValue(state.config.PRAZO_ENTREGA_DIAS || 3);
+  toggleShippingSettings();
   $("#storeInstagram").value = state.config.INSTAGRAM || "";
   renderWhatsappApiSettings();
 }
@@ -1259,7 +1457,10 @@ function saveSettings(event) {
     WHATSAPP: whatsapp,
     NOME_LOJA: $("#storeNameInput").value.trim() || "FITLYNE",
     SUBTITULO: $("#storeSubtitleInput").value.trim() || "Moda Fitness, Makeup & Skincare",
-    FRETE_FIXO: numberValue($("#fixedShipping").value),
+    FRETE_ATIVO: $("#shippingEnabled").checked ? "SIM" : "NAO",
+    FRETE_BELEM: numberValue($("#shippingBelem").value),
+    FRETE_ANANINDEUA: numberValue($("#shippingAnanindeua").value),
+    FRETE_MARITUBA: numberValue($("#shippingMarituba").value),
     FRETE_GRATIS_ACIMA: numberValue($("#freeShippingAbove").value),
     PRAZO_ENTREGA_DIAS: numberValue($("#deliveryDays").value || 3),
     INSTAGRAM: $("#storeInstagram").value.trim()
@@ -1305,6 +1506,7 @@ window.editProduct = function editProduct(id) {
   $("#productName").value = product.NOME || "";
   $("#description").value = product.DESCRICAO || "";
   $("#colorTone").value = product.COR_TOM || "";
+  populateCatalogGroupSelect(id, product.GRUPO_CATALOGO || "");
   $("#purchasePrice").value = numberValue(product.PRECO_COMPRA);
   $("#salePrice").value = numberValue(product.PRECO_VENDA);
   $("#initialStock").value = numberValue(product.ESTOQUE_ATUAL);
@@ -1398,11 +1600,20 @@ function bind() {
     if (select) window.updateProductStatus(select.dataset.id || "", select.value, select);
   });
   $("#stockForm").onsubmit = saveStock;
+  $("#stockProduct").onchange = () => populateStockVariantSelect();
   $("#saleForm").onsubmit = saveSale;
+  $("#saleProduct").onchange = () => populateSaleVariantSelect();
+  if ($("#saleKnownClient")) $("#saleKnownClient").onchange = (event) => {
+    const selected = consolidatedClients().find((client) => String(client.ID || client.NOME || "") === event.target.value);
+    if (selected) applyKnownClient(selected);
+    else if (!event.target.value) { $("#saleClient").value = ""; $("#salePhone").value = ""; }
+  };
+  $("#saleClient").onchange = () => { const selected = findClientByTypedName($("#saleClient").value); if (selected && !$("#salePhone").value.trim()) $("#salePhone").value = selected.TELEFONE || ""; };
   $("#cancelSaleEdit").onclick = resetSaleForm;
   $("#salesList").addEventListener("click", (event) => { const button = event.target.closest("button[data-sale-action]"); if (!button) return; if (button.dataset.saleAction === "edit") editSale(button.dataset.id); if (button.dataset.saleAction === "delete") cancelSale(button.dataset.id); });
   $("#expenseForm").onsubmit = saveExpense;
   $("#settingsForm").onsubmit = saveSettings;
+  $("#shippingEnabled").onchange = toggleShippingSettings;
   $("#testWhatsappBtn").onclick = testWhatsapp;
   $("#requestSearch").oninput = renderRequests;
   $("#requestStatusFilter").onchange = renderRequests;

@@ -185,3 +185,14 @@ button:disabled{cursor:not-allowed}
 .stock-number.low strong{color:#a56b00}.stock-number.zero strong{color:#a12a2a}.stock-number.ok strong{color:#146c3a}
 .sale-row{gap:12px;align-items:center}.sale-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}.cancelled-sale{opacity:.58;background:#fafafa}.cancelled-sale .amount{text-decoration:line-through}
 @media(max-width:640px){.sale-row{align-items:flex-start}.sale-actions{width:100%;justify-content:flex-start}.stock-grid{grid-template-columns:1fr}}
+
+
+/* Ajustes Loja Pro v2 — frete regional e ações de venda */
+.shipping-settings-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;transition:.2s ease}.shipping-settings-grid.shipping-disabled{opacity:.48}.shipping-toggle{padding:12px 14px;border:1px solid var(--line,#e7dfe2);border-radius:14px;background:#faf7f8}.sale-action-buttons{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}.action-label{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:#80777a;font-weight:800}.cancelled-history-note{padding:10px 4px 0;text-align:right}.sale-row{gap:14px}.sale-actions{min-width:230px}
+@media(max-width:700px){.shipping-settings-grid{grid-template-columns:1fr}.sale-row{align-items:flex-start}.sale-actions{min-width:0;width:100%;align-items:flex-start}.sale-action-buttons{justify-content:flex-start}}
+
+/* V3 — vendas por variação e clientes consolidados */
+#saleVariant:disabled,#stockVariant:disabled{background:#f5f3f4;color:#8a8285;cursor:not-allowed}
+.client-summary{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.client-summary .client-name{font-weight:800}.client-summary .client-phone{color:var(--muted);font-size:.82rem}
+.variant-chip-inline{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:999px;padding:3px 8px;font-size:.75rem;font-weight:750;background:#faf7f8;margin-left:6px}

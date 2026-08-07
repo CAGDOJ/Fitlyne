@@ -1,11 +1,11 @@
-Cole no Console do navegador:
+Depois de publicar no GitHub, abra o Console e rode:
 
 FITLYNE_DIAGNOSTICO()
 
 Esperado:
-build: "2026-08-06-loja-pro"
-api: URL terminada em /exec
+build: "2026-08-07-loja-pro-v4-grupos-explicitos"
+api: https://script.google.com/macros/s/AKfycbz8wSvAXMMhUwpvlXUcPp948mtf4gZ9-Sak5UynSyZfI9c9gsM-AeMH7Xwo4eLcNdkO-g/exec
 app: "painel" ou "catalogo"
 
-No catálogo, para conferir os produtos carregados:
-console.table(state?.products || [])
+No catálogo, os produtos com GRUPO_CATALOGO vazio devem aparecer separados.
+Somente produtos que apontam para o mesmo grupo/produto principal aparecem juntos.

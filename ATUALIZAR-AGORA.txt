@@ -1,26 +1,30 @@
-FITLYNE — ATUALIZAÇÃO LOJA PRO
+FITLYNE — LOJA PRO V4
 
-1) GOOGLE APPS SCRIPT
-- Abra o projeto ligado à planilha Fitlyne.
-- Substitua TODO o conteúdo do Code.gs pelo Code.gs deste pacote.
-- Salve.
-- Execute a função setupSystem UMA VEZ e autorize.
-- Em Implantar > Gerenciar implantações > editar implantação atual > Nova versão > Implantar.
-- NÃO crie uma implantação nova se quiser manter a mesma URL.
+CORREÇÕES PRINCIPAIS
+- Produtos antigos NÃO são agrupados automaticamente. Todos voltam a aparecer individualmente.
+- Produtos podem ter o mesmo nome: cada cadastro recebe um SKU/registro automático diferente.
+- Gloss, batons, skincare ou qualquer produto diferente ficam separados por padrão.
+- Novo campo "Agrupar no catálogo com" no cadastro/edição. Use somente para opções do MESMO produto, por exemplo Pó Compacto Cor 01 + Cor 02.
+- Vendas permitem escolher exatamente o modelo/tamanho/variação que saiu e dão baixa nessa variação.
+- Ao registrar venda, clientes já cadastrados aparecem para seleção e preenchem nome/WhatsApp.
+- Clientes com o mesmo nome são consolidados e o total gasto/compras é somado.
+- Frete regional mantido: Belém R$ 10, Ananindeua R$ 15 e Marituba R$ 15.
+- Valor 0 não significa grátis: a região fica desativada.
+- Exclusão/edição de vendas estorna e recalcula estoque.
 
-2) GITHUB
-- Envie os arquivos deste pacote diretamente para a raiz do repositório.
-- Preserve o arquivo CNAME; ele contém: fitlyne.shop
-- Aguarde o GitHub Pages publicar.
+COMO AGRUPAR SOMENTE O QUE DEVE SER VARIAÇÃO
+1. Deixe todos os produtos independentes por padrão.
+2. Abra Produtos > Editar no segundo item que deve virar opção do primeiro.
+3. Em "Agrupar no catálogo com", escolha o produto principal.
+4. Salve.
+5. No catálogo, somente esses itens aparecerão em um cartão com opções.
 
-3) CONFIGURAÇÃO
-- A URL atual do Apps Script está somente em fitlyne-config.js.
-- Para trocar a URL no futuro, altere apenas API_URL nesse arquivo.
+ATUALIZAÇÃO DO APPS SCRIPT
+1. Substitua todo o Code.gs pelo arquivo desta pasta.
+2. Salve.
+3. Execute setupSystem uma vez.
+4. Implantar > Gerenciar implantações > editar a implantação atual > Nova versão > Implantar.
 
-4) TESTE
-- Abra o painel e confira Produtos, Estoque e Vendas.
-- Abra catalog.html e teste filtros, ordenação e carrinho.
-- Abra links.html para a página de links.
-
-IMPORTANTE
-- setupSystem cria/atualiza colunas e a aba METRICAS, normaliza Fitness/Makeup/Skincare e gera SKU para produtos antigos sem código.
+GITHUB
+Envie todos os arquivos desta pasta diretamente para a raiz do repositório.
+Preserve o CNAME com fitlyne.shop.
