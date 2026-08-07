@@ -1,30 +1,24 @@
-FITLYNE — LOJA PRO V4
+FITLYNE LOJA PRO V6 — ARQUIVAR / RESTAURAR
 
-CORREÇÕES PRINCIPAIS
-- Produtos antigos NÃO são agrupados automaticamente. Todos voltam a aparecer individualmente.
-- Produtos podem ter o mesmo nome: cada cadastro recebe um SKU/registro automático diferente.
-- Gloss, batons, skincare ou qualquer produto diferente ficam separados por padrão.
-- Novo campo "Agrupar no catálogo com" no cadastro/edição. Use somente para opções do MESMO produto, por exemplo Pó Compacto Cor 01 + Cor 02.
-- Vendas permitem escolher exatamente o modelo/tamanho/variação que saiu e dão baixa nessa variação.
-- Ao registrar venda, clientes já cadastrados aparecem para seleção e preenchem nome/WhatsApp.
-- Clientes com o mesmo nome são consolidados e o total gasto/compras é somado.
-- Frete regional mantido: Belém R$ 10, Ananindeua R$ 15 e Marituba R$ 15.
-- Valor 0 não significa grátis: a região fica desativada.
-- Exclusão/edição de vendas estorna e recalcula estoque.
+1) GOOGLE APPS SCRIPT
+- Abra o projeto ligado à planilha da Fitlyne.
+- Substitua TODO o Code.gs pelo Code.gs desta pasta.
+- Salve.
+- Execute setupSystem() uma vez.
+- Vá em Implantar > Gerenciar implantações > Editar.
+- Selecione Nova versão e clique em Implantar.
+- NÃO crie outra implantação se quiser manter a mesma URL /exec.
 
-COMO AGRUPAR SOMENTE O QUE DEVE SER VARIAÇÃO
-1. Deixe todos os produtos independentes por padrão.
-2. Abra Produtos > Editar no segundo item que deve virar opção do primeiro.
-3. Em "Agrupar no catálogo com", escolha o produto principal.
-4. Salve.
-5. No catálogo, somente esses itens aparecerão em um cartão com opções.
+2) GITHUB
+- Envie os arquivos desta pasta diretamente para a raiz do repositório.
+- Preserve o arquivo CNAME (fitlyne.shop).
+- Aguarde o GitHub Pages concluir e atualize a página.
 
-ATUALIZAÇÃO DO APPS SCRIPT
-1. Substitua todo o Code.gs pelo arquivo desta pasta.
-2. Salve.
-3. Execute setupSystem uma vez.
-4. Implantar > Gerenciar implantações > editar a implantação atual > Nova versão > Implantar.
-
-GITHUB
-Envie todos os arquivos desta pasta diretamente para a raiz do repositório.
-Preserve o CNAME com fitlyne.shop.
+NOVIDADES V6
+- Estoque: abas Ativos / Estoque baixo / Esgotados / Arquivados.
+- Busca por produto, SKU, cor, categoria ou marca.
+- Botão Arquivar sem apagar fotos, estoque, vendas ou histórico.
+- Produtos arquivados saem do catálogo e das novas vendas.
+- Aba Arquivados possui botão Restaurar.
+- Ações rápidas: Ajustar / Editar / Arquivar.
+- Subtítulo público padronizado para “Moda Fitness & Makeup”.

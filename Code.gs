@@ -11,10 +11,10 @@ const SHEETS = {
   METRICAS: ["ID_PRODUTO", "CLIQUES", "PEDIDOS", "ATUALIZADO_EM"]
 };
 
-const PUBLIC_CACHE_KEY = "FITLYNE_PUBLIC_CATALOG_PRO_V4";
+const PUBLIC_CACHE_KEY = "FITLYNE_PUBLIC_CATALOG_PRO_V6";
 const CONFIG_CACHE_KEY = "FITLYNE_CONFIG_CLIQUE_PRONTO";
 const VALID_CATALOG_STATUS = ["AUTOMATICO", "DISPONIVEL", "ESGOTADO", "REPOSICAO"];
-const API_VERSION = "2026-08-07-loja-pro-v4-grupos-explicitos";
+const API_VERSION = "2026-08-07-loja-pro-v6-arquivo-estoque";
 let AUTH_SECRET_MEMORY = "";
 
 function setupSystem() {
@@ -22,7 +22,7 @@ function setupSystem() {
   setDefaultConfig_("ADMIN_PIN", "1234");
   setDefaultConfig_("WHATSAPP", "5591999999999");
   setDefaultConfig_("NOME_LOJA", "FITLYNE");
-  setDefaultConfig_("SUBTITULO", "Moda Fitness, Makeup & Skincare");
+  setDefaultConfig_("SUBTITULO", "Moda Fitness & Makeup");
   setDefaultConfig_("TOKEN_TTL_HORAS", "6");
   setDefaultConfig_("CATALOG_URL", "https://fitlyne.shop/catalog.html");
   setDefaultConfig_("FRETE_ATIVO", "SIM");
@@ -39,12 +39,13 @@ function setupSystem() {
   migrateLegacyProducts_();
   migrateConfig_();
   rebuildClients_();
-  return "Sistema FITLYNE Loja Pro V4 atualizado: produtos independentes por padrão, agrupamento explícito, clientes consolidados e vendas por variação.";
+  return "Sistema FITLYNE Loja Pro V6 atualizado: arquivar/restaurar produtos, estoque filtrável, vendas compatíveis e catálogo preservado.";
 }
 
 function migrateConfig_() {
   const cfg = config_();
-  if (!cfg.SUBTITULO || String(cfg.SUBTITULO).trim() === "Moda Fitness & Makeup") setConfig_("SUBTITULO", "Moda Fitness, Makeup & Skincare");
+  const subtitle = String(cfg.SUBTITULO || "").trim();
+  if (!subtitle || subtitle === "Moda Fitness, Makeup & Skincare" || subtitle === "Moda Fitness & Makeup") setConfig_("SUBTITULO", "Moda Fitness & Makeup");
   if (!cfg.CATALOG_URL || String(cfg.CATALOG_URL).indexOf("cagdoj.github.io/Fitlyne") >= 0) setConfig_("CATALOG_URL", "https://fitlyne.shop/catalog.html");
 }
 
@@ -81,6 +82,7 @@ function doGet(e) {
     data: {
       name: "FITLYNE API",
       version: API_VERSION,
+      capabilities: ["cancelSale", "deleteSale", "updateSale", "salesByVariant", "archiveProduct", "restoreProduct"],
       time: new Date().toISOString()
     }
   });
@@ -89,11 +91,22 @@ function doGet(e) {
 function doPost(e) {
   try {
     const request = JSON.parse((e && e.postData && e.postData.contents) || "{}");
-    const action = String(request.action || "").trim();
+    const rawAction = String(request.action || "").trim();
+    const actionAliases = {
+      cancelsale: "cancelSale",
+      deletesale: "cancelSale",
+      excluirvenda: "cancelSale",
+      cancelavenda: "cancelSale",
+      cancelvenda: "cancelSale",
+      updatesale: "updateSale",
+      editsale: "updateSale",
+      editarvenda: "updateSale"
+    };
+    const action = actionAliases[rawAction.toLowerCase()] || rawAction;
     const payload = request.payload || {};
 
     // Ações públicas: nunca dependem de login ou da configuração da API do WhatsApp.
-    if (action === "ping") return json_({ ok: true, data: { version: API_VERSION, time: new Date().toISOString() } });
+    if (action === "ping") return json_({ ok: true, data: { version: API_VERSION, capabilities: ["cancelSale", "deleteSale", "updateSale", "salesByVariant", "archiveProduct", "restoreProduct"], time: new Date().toISOString() } });
     if (action === "login") return json_({ ok: true, data: login_(payload.pin) });
     if (action === "publicCatalog") return json_({ ok: true, data: publicCatalog_() });
     if (action === "trackClick") return json_({ ok: true, data: trackMetric_(payload.productId, "CLIQUES", 1) });
@@ -109,6 +122,8 @@ function doPost(e) {
       uploadImage: uploadImage_,
       saveProduct: saveProduct_,
       deleteProduct: deleteProduct_,
+      archiveProduct: archiveProduct_,
+      restoreProduct: restoreProduct_,
       setProductStatus: setProductStatus_,
       stockMovement: stockMovement_,
       saveSale: saveSale_,
@@ -124,7 +139,7 @@ function doPost(e) {
       testWhatsappApi: testWhatsappApi_
     };
     if (!handlers[action]) throw new Error("Ação inválida: " + action);
-    const lockedActions = ["saveProduct", "deleteProduct", "setProductStatus", "stockMovement", "saveSale", "updateSale", "cancelSale", "deleteSale", "saveExpense", "saveSettings", "updateRequestStatus", "saveWhatsappApiSettings"];
+    const lockedActions = ["saveProduct", "deleteProduct", "archiveProduct", "restoreProduct", "setProductStatus", "stockMovement", "saveSale", "updateSale", "cancelSale", "deleteSale", "saveExpense", "saveSettings", "updateRequestStatus", "saveWhatsappApiSettings"];
     if (lockedActions.indexOf(action) >= 0) {
       const lock = LockService.getScriptLock();
       if (!lock.tryLock(15000)) throw new Error("O sistema está concluindo outra alteração. Tente novamente em alguns segundos.");
@@ -203,7 +218,7 @@ function login_(pin) {
     token: createToken_(config.TOKEN_TTL_HORAS || 6),
     config: {
       NOME_LOJA: config.NOME_LOJA || "FITLYNE",
-      SUBTITULO: config.SUBTITULO || "Moda Fitness, Makeup & Skincare"
+      SUBTITULO: config.SUBTITULO || "Moda Fitness & Makeup"
     },
     version: API_VERSION
   };
@@ -304,10 +319,14 @@ function nextSku_() {
   return "FIT-" + String(max + 1).padStart(6, "0");
 }
 
+function isProductArchived_(product) {
+  return String(product && product.ATIVO != null ? product.ATIVO : "").trim().toUpperCase() === "ARQUIVADO";
+}
+
 function isProductActive_(product) {
   const value = String(product && product.ATIVO != null ? product.ATIVO : "").trim().toUpperCase();
-  // Compatibilidade com produtos cadastrados em versões antigas: vazio significa publicado.
-  return ["NAO", "NÃO", "FALSE", "0", "INATIVO", "OCULTO"].indexOf(value) < 0;
+  // Compatibilidade com produtos antigos: vazio significa publicado. Arquivado nunca é público.
+  return ["NAO", "NÃO", "FALSE", "0", "INATIVO", "OCULTO", "ARQUIVADO"].indexOf(value) < 0;
 }
 
 function migrateLegacyProducts_() {
@@ -381,7 +400,7 @@ function publicCatalog_() {
     config: {
       WHATSAPP: allConfig.WHATSAPP || "",
       NOME_LOJA: allConfig.NOME_LOJA || "FITLYNE",
-      SUBTITULO: allConfig.SUBTITULO || "Moda Fitness, Makeup & Skincare",
+      SUBTITULO: allConfig.SUBTITULO || "Moda Fitness & Makeup",
       CATALOG_URL: allConfig.CATALOG_URL || "https://fitlyne.shop/catalog.html",
       FRETE_ATIVO: String(allConfig.FRETE_ATIVO || "NAO"),
       FRETE_BELEM: number_(allConfig.FRETE_BELEM),
@@ -586,6 +605,28 @@ function setProductStatus_(payload) {
   if (status === "DISPONIVEL" && number_(product.ESTOQUE_ATUAL) > 0) notifications = markReadyAndMaybeNotify_(product);
   clearPublicCache_();
   return { status: status, notifications: notifications };
+}
+
+function archiveProduct_(payload) {
+  const row = findRow_("PRODUTOS", "ID", payload.id);
+  if (!row) throw new Error("Produto não encontrado.");
+  const product = rowObject_("PRODUTOS", row);
+  product.ATIVO = "ARQUIVADO";
+  product.ATUALIZADO_EM = new Date();
+  upsert_("PRODUTOS", "ID", product);
+  clearPublicCache_();
+  return { product: product };
+}
+
+function restoreProduct_(payload) {
+  const row = findRow_("PRODUTOS", "ID", payload.id);
+  if (!row) throw new Error("Produto não encontrado.");
+  const product = rowObject_("PRODUTOS", row);
+  product.ATIVO = "SIM";
+  product.ATUALIZADO_EM = new Date();
+  upsert_("PRODUTOS", "ID", product);
+  clearPublicCache_();
+  return { product: product };
 }
 
 function deleteProduct_(payload) {
@@ -893,7 +934,7 @@ function saveSettings_(payload) {
   if (phone.length < 12 || phone.length > 15) throw new Error("WhatsApp inválido. Use DDI + DDD + número.");
   setConfig_("WHATSAPP", phone);
   setConfig_("NOME_LOJA", String(payload.NOME_LOJA || "FITLYNE").trim());
-  setConfig_("SUBTITULO", String(payload.SUBTITULO || "Moda Fitness, Makeup & Skincare").trim());
+  setConfig_("SUBTITULO", String(payload.SUBTITULO || "Moda Fitness & Makeup").trim());
   if (payload.CATALOG_URL) setConfig_("CATALOG_URL", String(payload.CATALOG_URL).trim());
   setConfig_("FRETE_ATIVO", String(payload.FRETE_ATIVO || "NAO").toUpperCase() === "SIM" ? "SIM" : "NAO");
   setConfig_("FRETE_BELEM", String(Math.max(0, number_(payload.FRETE_BELEM))));

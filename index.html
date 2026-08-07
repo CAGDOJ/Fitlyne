@@ -8,7 +8,7 @@
   <link rel="icon" href="./favicon.ico" sizes="any">
   <link rel="icon" type="image/svg+xml" href="./assets/icon.svg">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="styles.css?v=2026-08-06-loja-pro-v2">
+  <link rel="stylesheet" href="styles.css?v=2026-08-07-loja-pro-v6">
 </head>
 <body class="guest">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -35,7 +35,7 @@
     <button class="icon-btn" id="menuBtn" type="button" aria-label="Abrir menu administrativo" aria-controls="drawer" aria-expanded="false" hidden><svg class="icon"><use href="#i-menu"></use></svg></button>
     <div>
       <strong id="brandName">FITLYNE</strong>
-      <small id="brandSubtitle">Moda Fitness, Makeup & Skincare</small>
+      <small id="brandSubtitle">Moda Fitness & Makeup</small>
     </div>
     <div id="syncStatus" class="sync-status" role="status" aria-live="polite" hidden><span class="sync-dot" aria-hidden="true"></span><span id="syncStatusText">Tudo salvo</span></div>
   </header>
@@ -237,7 +237,19 @@
         <label>Motivo<input id="stockReason" placeholder="Ex.: Compra do fornecedor"></label>
         <button class="primary full">Registrar movimentação</button>
       </form>
-      <div class="card"><div class="section-heading"><div><h2>Estoque atual</h2><p>Todos os produtos cadastrados, inclusive Fitness e Skincare.</p></div></div><div id="currentStockList" class="stock-grid"></div></div>
+      <div class="card stock-management-card">
+        <div class="section-heading"><div><h2>Estoque atual</h2><p>Pesquise, ajuste ou arquive produtos sem perder o histórico.</p></div><span id="stockResultCount" class="badge">0 produtos</span></div>
+        <div class="stock-toolbar">
+          <input id="stockSearch" type="search" placeholder="Buscar por produto, SKU, cor, categoria ou marca">
+          <div class="stock-tabs" role="tablist" aria-label="Filtros do estoque">
+            <button type="button" class="active" data-stock-filter="active">Ativos</button>
+            <button type="button" data-stock-filter="low">Estoque baixo</button>
+            <button type="button" data-stock-filter="out">Esgotados</button>
+            <button type="button" data-stock-filter="archived">Arquivados</button>
+          </div>
+        </div>
+        <div id="currentStockList" class="stock-grid"></div>
+      </div>
       <div class="card"><h2>Movimentações recentes</h2><div id="movementList" class="list"></div></div>
     </section>
 
@@ -323,7 +335,7 @@
           <input id="storeNameInput" maxlength="60" placeholder="FITLYNE">
         </label>
         <label>Subtítulo
-          <input id="storeSubtitleInput" maxlength="100" placeholder="Moda Fitness, Makeup & Skincare">
+          <input id="storeSubtitleInput" maxlength="100" placeholder="Moda Fitness & Makeup">
         </label>
         <label class="checkbox full shipping-toggle"><input id="shippingEnabled" type="checkbox"> Ativar cálculo de frete no catálogo</label>
         <div class="full shipping-settings-grid" id="shippingSettingsBox">
@@ -380,7 +392,7 @@
     </section>
 
   </main>
-  <script src="./bootstrap.js?v=2026-08-06-loja-pro-v2" data-entry="./app.js"></script>
+  <script src="./bootstrap.js?v=2026-08-07-loja-pro-v6" data-entry="./app.js"></script>
 </body>
 </html>
 

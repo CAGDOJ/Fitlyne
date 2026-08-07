@@ -68,6 +68,7 @@ const state = {
   config: {},
   pendingFiles: [],
   editingId: null,
+  stockFilter: "active",
   view: "login"
 };
 
@@ -87,10 +88,14 @@ const numberValue = (value) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+function isProductArchived(product) {
+  return String(product?.ATIVO ?? "").trim().toUpperCase() === "ARQUIVADO";
+}
+
 function isProductActive(product) {
   const value = String(product?.ATIVO ?? "").trim().toUpperCase();
-  // Produtos antigos sem valor em ATIVO continuam publicados. Só ocultamos quando houver marcação explícita.
-  return !["NAO", "NÃO", "FALSE", "0", "INATIVO", "OCULTO"].includes(value);
+  // Produtos antigos sem valor em ATIVO continuam publicados. Arquivados ficam fora das listas ativas.
+  return !["NAO", "NÃO", "FALSE", "0", "INATIVO", "OCULTO", "ARQUIVADO"].includes(value);
 }
 
 function normalizedNiche(value) {
@@ -608,8 +613,9 @@ function renderProducts() {
   const query = $("#productSearch").value.toLowerCase();
   const niche = $("#productNicheFilter").value;
   const products = state.products.filter((product) =>
+    !isProductArchived(product) &&
     (!niche || normalizedNiche(product.NICHO) === niche) &&
-    (`${product.NOME} ${product.CATEGORIA} ${product.COR_TOM}`).toLowerCase().includes(query)
+    (`${product.NOME} ${product.CATEGORIA} ${product.COR_TOM} ${product.SKU}`).toLowerCase().includes(query)
   );
   $("#productList").innerHTML = products.map((product) => {
     const effective = productStatus(product);
@@ -1026,13 +1032,38 @@ function saveStock(event) {
 function renderCurrentStock() {
   const target = $("#currentStockList");
   if (!target) return;
-  const products = [...state.products].filter(isProductActive).sort((a, b) => String(a.NOME || "").localeCompare(String(b.NOME || ""), "pt-BR"));
+  const search = String($("#stockSearch")?.value || "").trim().toLowerCase();
+  const filter = state.stockFilter || "active";
+  const matchesSearch = (product) => `${product.NOME || ""} ${product.SKU || ""} ${product.COR_TOM || ""} ${product.CATEGORIA || ""} ${product.MARCA || ""}`.toLowerCase().includes(search);
+  const products = [...state.products].filter((product) => {
+    const stock = numberValue(product.ESTOQUE_ATUAL);
+    const minimum = numberValue(product.ESTOQUE_MINIMO);
+    const archived = isProductArchived(product);
+    if (!matchesSearch(product)) return false;
+    if (filter === "archived") return archived;
+    if (archived || !isProductActive(product)) return false;
+    if (filter === "low") return stock > 0 && minimum > 0 && stock < minimum;
+    if (filter === "out") return stock <= 0;
+    return true;
+  }).sort((a, b) => String(a.NOME || "").localeCompare(String(b.NOME || ""), "pt-BR"));
+
+  $$("[data-stock-filter]").forEach((button) => button.classList.toggle("active", button.dataset.stockFilter === filter));
+  const counter = $("#stockResultCount");
+  if (counter) counter.textContent = `${products.length} produto${products.length === 1 ? "" : "s"}`;
+
   target.innerHTML = products.length ? products.map((product) => {
     const stock = numberValue(product.ESTOQUE_ATUAL);
     const minimum = numberValue(product.ESTOQUE_MINIMO);
     const low = stock > 0 && minimum > 0 && stock < minimum;
-    return `<article class="stock-card"><div><span class="badge">${escapeHtml(normalizedNiche(product.NICHO))}</span><h3>${escapeHtml(product.NOME)}</h3><small>${escapeHtml(product.SKU || "")} ${product.COR_TOM ? `· ${escapeHtml(product.COR_TOM)}` : ""} ${product.TAMANHO_EXIBICAO ? `· ${escapeHtml(product.TAMANHO_EXIBICAO)}` : ""}</small></div><div class="stock-number ${stock <= 0 ? "zero" : low ? "low" : "ok"}"><strong>${stock}</strong><span>${stock <= 0 ? "Esgotado" : low ? "Baixo" : "Em estoque"}</span></div></article>`;
-  }).join("") : '<p class="muted">Nenhum produto cadastrado.</p>';
+    const archived = isProductArchived(product);
+    return `<article class="stock-card${archived ? " archived" : ""}">
+      <div class="stock-card-main"><span class="badge">${escapeHtml(normalizedNiche(product.NICHO))}</span>${archived ? '<span class="publication-badge hidden-product">Arquivado</span>' : ""}<h3>${escapeHtml(product.NOME)}</h3><small>${escapeHtml(product.SKU || "")} ${product.COR_TOM ? `· ${escapeHtml(product.COR_TOM)}` : ""} ${product.TAMANHO_EXIBICAO ? `· ${escapeHtml(product.TAMANHO_EXIBICAO)}` : ""}</small></div>
+      <div class="stock-card-side"><div class="stock-number ${stock <= 0 ? "zero" : low ? "low" : "ok"}"><strong>${stock}</strong><span>${archived ? "Guardado" : stock <= 0 ? "Esgotado" : low ? "Baixo" : "Em estoque"}</span></div>
+      <div class="stock-card-actions">${archived
+        ? `<button type="button" class="ghost compact" data-stock-action="restore" data-id="${escapeHtml(product.ID)}">Restaurar</button>`
+        : `<button type="button" class="ghost compact" data-stock-action="adjust" data-id="${escapeHtml(product.ID)}">Ajustar</button><button type="button" class="ghost compact" data-stock-action="edit" data-id="${escapeHtml(product.ID)}">Editar</button><button type="button" class="danger compact" data-stock-action="archive" data-id="${escapeHtml(product.ID)}">Arquivar</button>`}</div></div>
+    </article>`;
+  }).join("") : `<div class="empty-stock"><b>Nenhum produto nesta lista.</b><span>${filter === "archived" ? "Produtos arquivados aparecerão aqui e poderão ser restaurados." : "Tente outro filtro ou termo de busca."}</span></div>`;
 }
 
 function renderMovements() {
@@ -1088,7 +1119,25 @@ async function cancelSale(id) {
 
   const sync = beginSync("Estornando venda...");
   try {
-    const result = await api("cancelSale", { id });
+    let result;
+    try {
+      result = await api("cancelSale", { id });
+    } catch (firstError) {
+      const msg = String(firstError?.message || firstError || "");
+      if (/a[cç][aã]o inv[aá]lida/i.test(msg) || /invalid action/i.test(msg)) {
+        try {
+          result = await api("deleteSale", { id });
+        } catch (secondError) {
+          const secondMsg = String(secondError?.message || secondError || "");
+          if (/a[cç][aã]o inv[aá]lida/i.test(secondMsg) || /invalid action/i.test(secondMsg)) {
+            throw new Error("O Apps Script publicado está desatualizado e ainda não possui a função de excluir vendas. Atualize o Code.gs e publique uma NOVA VERSÃO da mesma implantação.");
+          }
+          throw secondError;
+        }
+      } else {
+        throw firstError;
+      }
+    }
     Object.assign(sale, result?.sale || { STATUS: "CANCELADA" }); delete sale.__LOCAL_PENDING;
     if (result?.product) { const localProduct = state.products.find((entry) => sameId(entry.ID, result.product.ID)); if (localProduct) Object.assign(localProduct, result.product); }
     if (result?.variant) { const localVariant = state.variants.find((entry) => sameId(entry.ID, result.variant.ID)); if (localVariant) Object.assign(localVariant, result.variant); }
@@ -1456,7 +1505,7 @@ function saveSettings(event) {
   const settings = {
     WHATSAPP: whatsapp,
     NOME_LOJA: $("#storeNameInput").value.trim() || "FITLYNE",
-    SUBTITULO: $("#storeSubtitleInput").value.trim() || "Moda Fitness, Makeup & Skincare",
+    SUBTITULO: $("#storeSubtitleInput").value.trim() || "Moda Fitness & Makeup",
     FRETE_ATIVO: $("#shippingEnabled").checked ? "SIM" : "NAO",
     FRETE_BELEM: numberValue($("#shippingBelem").value),
     FRETE_ANANINDEUA: numberValue($("#shippingAnanindeua").value),
@@ -1537,6 +1586,43 @@ window.editProduct = function editProduct(id) {
   showView("productForm");
 };
 
+window.archiveProduct = function archiveProduct(id) {
+  const product = state.products.find((entry) => sameId(entry.ID, id));
+  if (!product) return toast("Produto não encontrado.");
+  if (!window.confirm(`Arquivar “${product.NOME}”?\n\nEle sairá do catálogo, das vendas e do estoque ativo, mas todo o histórico será preservado.`)) return;
+  const oldValue = product.ATIVO;
+  product.ATIVO = "ARQUIVADO";
+  saveAdminSnapshot(); populateProductSelects(); renderProducts(); renderCurrentStock(); renderDashboard();
+  toast("Produto arquivado.");
+  const sync = beginSync("Arquivando produto...");
+  api("archiveProduct", { id }).then((result) => {
+    if (result?.product) Object.assign(product, result.product);
+    saveAdminSnapshot(); sync.success("Produto arquivado");
+  }).catch((error) => {
+    product.ATIVO = oldValue;
+    saveAdminSnapshot(); populateProductSelects(); renderProducts(); renderCurrentStock(); renderDashboard();
+    sync.error("Falha ao arquivar"); toast(`Arquivamento desfeito: ${error.message}`);
+  });
+};
+
+window.restoreProduct = function restoreProduct(id) {
+  const product = state.products.find((entry) => sameId(entry.ID, id));
+  if (!product) return toast("Produto não encontrado.");
+  const oldValue = product.ATIVO;
+  product.ATIVO = "SIM";
+  saveAdminSnapshot(); populateProductSelects(); renderProducts(); renderCurrentStock(); renderDashboard();
+  toast("Produto restaurado.");
+  const sync = beginSync("Restaurando produto...");
+  api("restoreProduct", { id }).then((result) => {
+    if (result?.product) Object.assign(product, result.product);
+    saveAdminSnapshot(); sync.success("Produto restaurado");
+  }).catch((error) => {
+    product.ATIVO = oldValue;
+    saveAdminSnapshot(); populateProductSelects(); renderProducts(); renderCurrentStock(); renderDashboard();
+    sync.error("Falha ao restaurar"); toast(`Restauração desfeita: ${error.message}`);
+  });
+};
+
 window.deleteProduct = function deleteProduct(id) {
   const product = state.products.find((entry) => sameId(entry.ID, id));
   if (!product) return toast("Produto não encontrado.");
@@ -1601,6 +1687,17 @@ function bind() {
   });
   $("#stockForm").onsubmit = saveStock;
   $("#stockProduct").onchange = () => populateStockVariantSelect();
+  if ($("#stockSearch")) $("#stockSearch").oninput = renderCurrentStock;
+  $$("[data-stock-filter]").forEach((button) => button.onclick = () => { state.stockFilter = button.dataset.stockFilter || "active"; renderCurrentStock(); });
+  if ($("#currentStockList")) $("#currentStockList").addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-stock-action]");
+    if (!button) return;
+    const id = button.dataset.id || "";
+    if (button.dataset.stockAction === "archive") window.archiveProduct(id);
+    if (button.dataset.stockAction === "restore") window.restoreProduct(id);
+    if (button.dataset.stockAction === "edit") window.editProduct(id);
+    if (button.dataset.stockAction === "adjust") { $("#stockProduct").value = id; populateStockVariantSelect(); $("#stockQty")?.focus(); window.scrollTo({ top: 0, behavior: "smooth" }); }
+  });
   $("#saleForm").onsubmit = saveSale;
   $("#saleProduct").onchange = () => populateSaleVariantSelect();
   if ($("#saleKnownClient")) $("#saleKnownClient").onchange = (event) => {
@@ -1721,3 +1818,20 @@ if (document.readyState === "loading") {
 } else {
   startFitlyne();
 }
+
+
+window.FITLYNE_TESTAR_BACKEND = async function () {
+  try {
+    const data = await api("ping", {}, "");
+    console.table({
+      siteBuild: window.FITLYNE_CONFIG?.BUILD || "",
+      apiVersion: data?.version || "desconhecida",
+      cancelSale: Array.isArray(data?.capabilities) ? data.capabilities.includes("cancelSale") : "backend antigo",
+      deleteSale: Array.isArray(data?.capabilities) ? data.capabilities.includes("deleteSale") : "backend antigo"
+    });
+    return data;
+  } catch (error) {
+    console.error("FITLYNE backend:", error);
+    throw error;
+  }
+};

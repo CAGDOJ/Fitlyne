@@ -6,11 +6,11 @@
  * app.js e catalog.js leem automaticamente este arquivo.
  */
 window.FITLYNE_CONFIG = Object.freeze({
-  BUILD: "2026-08-07-loja-pro-v4-grupos-explicitos",
-  API_URL: "https://script.google.com/macros/s/AKfycbyuGoBjtRh4lxGarDYw35hlJ_XCjCbQRwyvbS4kuzelvTbsUlMSKb5-DJyZabCEklzi6Q/exec",
+  BUILD: "2026-08-07-loja-pro-v6-arquivo-estoque",
+  API_URL: "https://script.google.com/macros/s/AKfycbxpPyKW0ULMETX3A2IBj21iSWfBL71bV7TZ-ayLtN-9a7HJSN6u7dyx3sMgh4kn3q6RZg/exec",
   CLOUDINARY_CLOUD_NAME: "v9gfcyqm",
   CLOUDINARY_UPLOAD_PRESET: "fitlyne_upload",
   CLOUDINARY_WATERMARK_PUBLIC_ID: "",
   STORE_NAME: "FITLYNE",
-  STORE_SUBTITLE: "Moda Fitness, Makeup & Skincare"
+  STORE_SUBTITLE: "Moda Fitness & Makeup"
 });
