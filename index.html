@@ -8,7 +8,7 @@
   <link rel="icon" href="./favicon.ico" sizes="any">
   <link rel="icon" type="image/svg+xml" href="./assets/icon.svg">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="styles.css?v=2026-07-31-profissional-avisos">
+  <link rel="stylesheet" href="styles.css?v=2026-08-06-loja-pro">
 </head>
 <body class="guest">
   <svg class="icon-sprite" aria-hidden="true" focusable="false">
@@ -27,6 +27,7 @@
     <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m5 18 5-5 3 3 2-2 4 4"/></symbol>
     <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 7h4l2-3h4l2 3h4v13H4z"/><circle cx="12" cy="13" r="4"/></symbol>
     <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></symbol>
   </svg>
   <div id="toast"></div>
 
@@ -34,9 +35,9 @@
     <button class="icon-btn" id="menuBtn" type="button" aria-label="Abrir menu administrativo" aria-controls="drawer" aria-expanded="false" hidden><svg class="icon"><use href="#i-menu"></use></svg></button>
     <div>
       <strong id="brandName">FITLYNE</strong>
-      <small id="brandSubtitle">Moda Fitness & Makeup</small>
+      <small id="brandSubtitle">Moda Fitness, Makeup & Skincare</small>
     </div>
-    <span class="topbar-spacer" aria-hidden="true"></span>
+    <div id="syncStatus" class="sync-status" role="status" aria-live="polite" hidden><span class="sync-dot" aria-hidden="true"></span><span id="syncStatusText">Tudo salvo</span></div>
   </header>
 
   <aside id="drawer" class="drawer" aria-hidden="true" hidden>
@@ -49,6 +50,7 @@
       <button type="button" data-view="productForm"><svg class="nav-icon"><use href="#i-plus-box"></use></svg><span>Novo produto</span></button>
       <button type="button" data-view="products"><svg class="nav-icon"><use href="#i-box"></use></svg><span>Produtos</span></button>
       <a class="drawer-link" href="./catalog.html" target="_blank" rel="noopener"><svg class="nav-icon"><use href="#i-store"></use></svg><span>Ver catálogo público</span></a>
+      <a class="drawer-link" href="./links.html" target="_blank" rel="noopener"><svg class="nav-icon"><use href="#i-link"></use></svg><span>Página de links</span></a>
       <button type="button" data-view="stock"><svg class="nav-icon"><use href="#i-stock"></use></svg><span>Estoque</span></button>
       <button type="button" data-view="sales"><svg class="nav-icon"><use href="#i-cart"></use></svg><span>Vendas</span></button>
       <button type="button" data-view="requests"><svg class="nav-icon"><use href="#i-bell"></use></svg><span>Solicitações</span><span id="requestMenuCount" class="nav-count" hidden>0</span></button>
@@ -88,6 +90,7 @@
           <button data-view="sales">Nova venda</button>
           <button data-view="stock">Ajustar estoque</button>
           <a class="quick-action" href="./catalog.html" target="_blank" rel="noopener">Ver catálogo público</a>
+          <a class="quick-action" href="./links.html" target="_blank" rel="noopener">Abrir página de links</a>
           <button data-view="requests">Solicitações de clientes</button>
           <button data-view="settings">Configurar WhatsApp</button>
         </div>
@@ -110,10 +113,12 @@
           <select id="niche" required>
             <option value="FITNESS">Moda Fitness</option>
             <option value="MAKEUP">Makeup</option>
+            <option value="SKINCARE">Skincare</option>
           </select>
         </label>
-        <label>Nome do produto
-          <input id="productName" required placeholder="Ex.: Conjunto Canelado">
+        <label>Nome do produto / modelo
+          <input id="productName" required placeholder="Ex.: Pó Compacto, Conjunto Canelado">
+          <small class="field-help">Use o mesmo nome para o mesmo modelo e diferencie pela cor/tom ou tamanho. Cada variação recebe código próprio.</small>
         </label>
         <label>Categoria
           <input id="category" required placeholder="Ex.: Conjunto, Legging, Gloss">
@@ -121,7 +126,7 @@
         <label>Marca
           <input id="brand" value="FITLYNE">
         </label>
-        <label>Cor ou tom
+        <label>Cor, tom ou variação
           <input id="colorTone" placeholder="Ex.: Preto, Rosa, Bege 3">
         </label>
         <label>Preço de compra
@@ -196,9 +201,10 @@
       <div class="filters card">
         <input id="productSearch" placeholder="Pesquisar produto">
         <select id="productNicheFilter">
-          <option value="">Todos</option>
           <option value="FITNESS">Fitness</option>
           <option value="MAKEUP">Makeup</option>
+          <option value="SKINCARE">Skincare</option>
+          <option value="" selected>Todos</option>
         </select>
       </div>
       <div id="productList" class="product-admin-grid"></div>
@@ -221,12 +227,14 @@
         <label>Motivo<input id="stockReason" placeholder="Ex.: Compra do fornecedor"></label>
         <button class="primary full">Registrar movimentação</button>
       </form>
+      <div class="card"><div class="section-heading"><div><h2>Estoque atual</h2><p>Todos os produtos cadastrados, inclusive Fitness e Skincare.</p></div></div><div id="currentStockList" class="stock-grid"></div></div>
       <div class="card"><h2>Movimentações recentes</h2><div id="movementList" class="list"></div></div>
     </section>
 
     <section id="salesView" class="view">
       <div class="page-title"><div><h1>Vendas</h1><p>Registre a venda e dê baixa automática</p></div></div>
       <form id="saleForm" class="card form-grid">
+        <input id="saleEditId" type="hidden">
         <label>Produto<select id="saleProduct" required></select></label>
         <label>Quantidade<input id="saleQty" type="number" min="1" value="1" required inputmode="numeric"></label>
         <label>Cliente<input id="saleClient" placeholder="Nome da cliente"></label>
@@ -237,9 +245,9 @@
             <option>PIX</option><option>DINHEIRO</option><option>CARTAO_CREDITO</option><option>CARTAO_DEBITO</option>
           </select>
         </label>
-        <button class="primary full">Finalizar venda</button>
+        <div class="form-actions full"><button id="cancelSaleEdit" class="ghost" type="button" hidden>Cancelar edição</button><button id="saveSaleBtn" class="primary" type="submit">Finalizar venda</button></div>
       </form>
-      <div class="card"><h2>Vendas recentes</h2><div id="salesList" class="list"></div></div>
+      <div class="card"><div class="section-heading"><div><h2>Vendas recentes</h2><p>Edite lançamentos incorretos ou exclua para estornar o estoque.</p></div></div><div id="salesList" class="list"></div></div>
     </section>
 
 
@@ -293,7 +301,19 @@
           <input id="storeNameInput" maxlength="60" placeholder="FITLYNE">
         </label>
         <label>Subtítulo
-          <input id="storeSubtitleInput" maxlength="100" placeholder="Moda Fitness & Makeup">
+          <input id="storeSubtitleInput" maxlength="100" placeholder="Moda Fitness, Makeup & Skincare">
+        </label>
+        <label>Frete fixo (R$)
+          <input id="fixedShipping" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0,00">
+        </label>
+        <label>Frete grátis acima de (R$)
+          <input id="freeShippingAbove" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0 = desativado">
+        </label>
+        <label>Prazo estimado de entrega (dias)
+          <input id="deliveryDays" type="number" min="0" max="60" inputmode="numeric" placeholder="3">
+        </label>
+        <label>Instagram (opcional)
+          <input id="storeInstagram" maxlength="120" placeholder="@fitlyne ou link do Instagram">
         </label>
         <div class="form-actions full">
           <button type="button" class="ghost" id="testWhatsappBtn">Testar WhatsApp</button>
@@ -328,7 +348,7 @@
     </section>
 
   </main>
-  <script src="./bootstrap.js?v=2026-07-31-login-rapido" data-entry="./app.js"></script>
+  <script src="./bootstrap.js?v=2026-08-06-loja-pro" data-entry="./app.js"></script>
 </body>
 </html>
 

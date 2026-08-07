@@ -7,6 +7,7 @@ if (!C || !String(C.API_URL || "").startsWith("https://script.google.com/macros/
 }
 
 const FITLYNE_API_URL = C.API_URL;
+const ADMIN_SNAPSHOT_KEY = `fitlyneAdminSnapshot:${C.BUILD || "atual"}`;
 console.info("FITLYNE painel ativo", { build: C.BUILD, api: FITLYNE_API_URL });
 window.FITLYNE_DIAGNOSTICO = () => ({
   build: C.BUILD,
@@ -16,8 +17,44 @@ window.FITLYNE_DIAGNOSTICO = () => ({
   app: "painel"
 });
 
+const ADMIN_TOKEN_KEY = "fitlyneAdminToken";
+const ADMIN_TOKEN_TIME_KEY = "fitlyneAdminTokenSavedAt";
+const ADMIN_TOKEN_MAX_AGE = 5.5 * 60 * 60 * 1000;
+
+function readStoredToken() {
+  try {
+    const savedAt = Number(localStorage.getItem(ADMIN_TOKEN_TIME_KEY) || 0);
+    const token = localStorage.getItem(ADMIN_TOKEN_KEY) || sessionStorage.getItem("fitlyneToken") || "";
+    if (token && savedAt && Date.now() - savedAt < ADMIN_TOKEN_MAX_AGE) return token;
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+    localStorage.removeItem(ADMIN_TOKEN_TIME_KEY);
+    sessionStorage.removeItem("fitlyneToken");
+  } catch (error) {
+    return sessionStorage.getItem("fitlyneToken") || "";
+  }
+  return "";
+}
+
+function storeToken(token) {
+  state.token = token || "";
+  sessionStorage.setItem("fitlyneToken", state.token);
+  try {
+    localStorage.setItem(ADMIN_TOKEN_KEY, state.token);
+    localStorage.setItem(ADMIN_TOKEN_TIME_KEY, String(Date.now()));
+  } catch (error) {}
+}
+
+function clearStoredToken() {
+  sessionStorage.removeItem("fitlyneToken");
+  try {
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+    localStorage.removeItem(ADMIN_TOKEN_TIME_KEY);
+  } catch (error) {}
+  state.token = "";
+}
+
 const state = {
-  token: sessionStorage.getItem("fitlyneToken") || "",
+  token: readStoredToken(),
   products: [],
   photos: [],
   variants: [],
@@ -26,6 +63,7 @@ const state = {
   clients: [],
   expenses: [],
   requests: [],
+  metrics: [],
   whatsappApi: {},
   config: {},
   pendingFiles: [],
@@ -55,8 +93,20 @@ function isProductActive(product) {
   return !["NAO", "NÃO", "FALSE", "0", "INATIVO", "OCULTO"].includes(value);
 }
 
+function normalizedNiche(value) {
+  const text = String(value ?? "").trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (text.includes("FIT")) return "FITNESS";
+  if (text.includes("SKIN") || text.includes("PELE")) return "SKINCARE";
+  if (text.includes("MAKE") || text.includes("MAQUI")) return "MAKEUP";
+  return text;
+}
+
+function saleIsActive(sale) {
+  return !["CANCELADA", "CANCELADO", "EXCLUIDA", "EXCLUÍDA"].includes(String(sale?.STATUS || "ATIVA").trim().toUpperCase());
+}
+
 function normalizeLoadedData(data) {
-  state.products = Array.isArray(data.products) ? data.products.map((product) => ({ ...product, ID: String(product.ID ?? "").trim() })) : [];
+  state.products = Array.isArray(data.products) ? data.products.map((product) => ({ ...product, ID: String(product.ID ?? "").trim(), NICHO: normalizedNiche(product.NICHO) })) : [];
   state.photos = Array.isArray(data.photos) ? data.photos.map((photo) => ({
     ...photo,
     ID: String(photo.ID ?? "").trim(),
@@ -71,6 +121,7 @@ function normalizeLoadedData(data) {
   state.clients = Array.isArray(data.clients) ? data.clients : [];
   state.expenses = Array.isArray(data.expenses) ? data.expenses : [];
   state.requests = Array.isArray(data.requests) ? data.requests : [];
+  state.metrics = Array.isArray(data.metrics) ? data.metrics : [];
   state.whatsappApi = data.whatsappApi || {};
   state.config = data.config || {};
 }
@@ -123,6 +174,87 @@ function openWhatsapp(phone, message) {
     if (!popup) window.location.href = url;
   }
   return true;
+}
+
+function saveAdminSnapshot() {
+  try {
+    const data = {
+      products: state.products, photos: state.photos, variants: state.variants, movements: state.movements,
+      sales: state.sales, clients: state.clients, expenses: state.expenses, requests: state.requests,
+      whatsappApi: state.whatsappApi, config: state.config
+    };
+    localStorage.setItem(ADMIN_SNAPSHOT_KEY, JSON.stringify({ savedAt: Date.now(), data }));
+  } catch (error) {
+    console.warn("Não foi possível salvar o acesso rápido:", error);
+  }
+}
+
+function loadAdminSnapshot() {
+  try {
+    Object.keys(localStorage).filter((key) => key.startsWith("fitlyneAdminSnapshot:") && key !== ADMIN_SNAPSHOT_KEY).forEach((key) => localStorage.removeItem(key));
+    const snapshot = JSON.parse(localStorage.getItem(ADMIN_SNAPSHOT_KEY) || "null");
+    if (!snapshot?.data) return false;
+    applyLoadedData(snapshot.data, false);
+    return true;
+  } catch (error) {
+    localStorage.removeItem(ADMIN_SNAPSHOT_KEY);
+    return false;
+  }
+}
+
+function setButtonBusy(button, label) {
+  if (!button) return () => {};
+  const original = button.innerHTML;
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  button.innerHTML = `<span class="button-spinner" aria-hidden="true"></span><span>${escapeHtml(label)}</span>`;
+  return () => {
+    button.disabled = false;
+    button.removeAttribute("aria-busy");
+    button.innerHTML = original;
+  };
+}
+
+let pendingSyncOperations = 0;
+let syncHideTimer = null;
+
+function setSyncState(mode, message) {
+  const box = $("#syncStatus");
+  const label = $("#syncStatusText");
+  if (!box || !label) return;
+  clearTimeout(syncHideTimer);
+  box.hidden = false;
+  box.className = `sync-status ${mode || ""}`.trim();
+  label.textContent = message || "Tudo salvo";
+  if (mode === "saved") {
+    syncHideTimer = setTimeout(() => { if (pendingSyncOperations === 0) box.hidden = true; }, 1500);
+  }
+}
+
+function beginSync(message = "Salvando...") {
+  pendingSyncOperations += 1;
+  setSyncState("saving", message);
+  let finished = false;
+  return {
+    success(message = "Tudo salvo") {
+      if (finished) return;
+      finished = true;
+      pendingSyncOperations = Math.max(0, pendingSyncOperations - 1);
+      if (pendingSyncOperations > 0) setSyncState("saving", "Salvando alterações...");
+      else setSyncState("saved", message);
+    },
+    error(message = "Não foi possível salvar") {
+      if (finished) return;
+      finished = true;
+      pendingSyncOperations = Math.max(0, pendingSyncOperations - 1);
+      setSyncState("error", message);
+      syncHideTimer = setTimeout(() => { if (pendingSyncOperations === 0) $("#syncStatus").hidden = true; }, 4000);
+    }
+  };
+}
+
+function prewarmApi() {
+  fetch(`${FITLYNE_API_URL}?warm=${Date.now()}`, { cache: "no-store", redirect: "follow" }).catch(() => {});
 }
 
 async function api(action, payload = {}, auth = true, timeoutMs = 30000) {
@@ -202,22 +334,23 @@ function showView(name) {
   closeDrawer();
   if (name === "dashboard") renderDashboard();
   if (name === "products") renderProducts();
-  if (name === "stock") renderMovements();
+  if (name === "stock") { renderCurrentStock(); renderMovements(); }
   if (name === "sales") renderSales();
   if (name === "requests") renderRequests();
   if (name === "clients") renderClients();
   if (name === "finance") renderFinance();
   if (name === "settings") renderSettings();
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  window.scrollTo(0, 0);
 }
 
-function applyLoadedData(data) {
+function applyLoadedData(data, persist = true) {
   normalizeLoadedData(data || {});
   $("#brandName").textContent = state.config.NOME_LOJA || C.STORE_NAME;
   $("#brandSubtitle").textContent = state.config.SUBTITULO || C.STORE_SUBTITLE;
   populateProductSelects();
   renderWhatsappWarning();
   updateRequestIndicators();
+  if (persist) saveAdminSnapshot();
 }
 
 async function login(event) {
@@ -231,54 +364,54 @@ async function login(event) {
   }
 
   const button = $("#loginBtn");
-  const originalHtml = button.innerHTML;
-  button.disabled = true;
-  button.setAttribute("aria-busy", "true");
-  button.innerHTML = '<span class="button-spinner" aria-hidden="true"></span><span>Entrando...</span>';
+  const restoreButton = setButtonBusy(button, "Entrando...");
   pinInput.disabled = true;
   setLoginMessage("Verificando o acesso...", "loading");
 
   try {
-    // O backend devolve o token e os dados iniciais na mesma chamada.
-    // Isso evita uma segunda espera logo após validar o PIN.
-    const result = await api("login", { pin }, false, 30000);
+    // O login devolve apenas o token. A tela abre imediatamente e os dados atualizam em segundo plano.
+    const result = await api("login", { pin }, false, 20000);
     if (!result?.token) throw new Error("A API não devolveu uma sessão válida.");
 
-    state.token = result.token;
-    sessionStorage.setItem("fitlyneToken", result.token);
-    setLoginMessage("Acesso liberado. Abrindo a gestão...", "success");
+    storeToken(result.token);
+    if (result.config) state.config = { ...state.config, ...result.config };
+    $("#brandName").textContent = state.config.NOME_LOJA || C.STORE_NAME;
+    $("#brandSubtitle").textContent = state.config.SUBTITULO || C.STORE_SUBTITLE;
 
-    if (result.bootstrap) applyLoadedData(result.bootstrap);
-    else await loadAll();
-
+    const hadSnapshot = loadAdminSnapshot();
     setAuthenticatedUI(true);
     showView("dashboard");
     setLoginMessage("");
-    toast("Acesso liberado.");
+    toast(hadSnapshot ? "Acesso liberado. Atualizando os dados..." : "Acesso liberado. Carregando os dados...");
+
+    // Atualiza online sem segurar a entrada no painel.
+    loadAll().then(() => {
+      if (state.view === "dashboard") renderDashboard();
+      toast("Dados atualizados.");
+    }).catch((error) => {
+      console.error(error);
+      toast(hadSnapshot ? "Você está usando os últimos dados salvos. A atualização online falhou." : error.message);
+    });
   } catch (error) {
-    sessionStorage.removeItem("fitlyneToken");
-    state.token = "";
+    clearStoredToken();
     const message = error?.message || "Não foi possível entrar.";
     setLoginMessage(message, "error");
     toast(message);
     pinInput.select();
   } finally {
-    button.disabled = false;
-    button.removeAttribute("aria-busy");
-    button.innerHTML = originalHtml;
+    restoreButton();
     pinInput.disabled = false;
-    pinInput.focus();
+    if (!isAuthenticated()) pinInput.focus();
   }
 }
 
 async function loadAll() {
-  const data = await api("bootstrap", {}, true, 30000);
+  const data = await api("bootstrap", {}, true, 25000);
   applyLoadedData(data);
 }
 
 function logout() {
-  sessionStorage.removeItem("fitlyneToken");
-  state.token = "";
+  clearStoredToken();
   setAuthenticatedUI(false);
   showView("login");
   setTimeout(() => $("#pinInput")?.focus(), 0);
@@ -315,7 +448,7 @@ function renderDashboard() {
     const minimum = numberValue(product.ESTOQUE_MINIMO);
     return current > 0 && minimum > 0 && current < minimum;
   });
-  const revenue = state.sales.reduce((total, sale) => total + Number(sale.TOTAL || 0), 0);
+  const revenue = state.sales.filter(saleIsActive).reduce((total, sale) => total + Number(sale.TOTAL || 0), 0);
   $("#stats").innerHTML = [
     ["Produtos", active.length], ["Estoque", stock], ["Estoque baixo", low.length], ["Faturamento", money(revenue)]
   ].map(([label, value]) => `<div class="stat"><strong>${value}</strong><span>${label}</span></div>`).join("");
@@ -363,7 +496,7 @@ function renderProducts() {
   const query = $("#productSearch").value.toLowerCase();
   const niche = $("#productNicheFilter").value;
   const products = state.products.filter((product) =>
-    (!niche || product.NICHO === niche) &&
+    (!niche || normalizedNiche(product.NICHO) === niche) &&
     (`${product.NOME} ${product.CATEGORIA} ${product.COR_TOM}`).toLowerCase().includes(query)
   );
   $("#productList").innerHTML = products.map((product) => {
@@ -371,12 +504,13 @@ function renderProducts() {
     const rawSelected = String(product.STATUS_CATALOGO || "AUTOMATICO").trim().toUpperCase();
     const selected = STATUS_OPTIONS.some(([value]) => value === rawSelected) ? rawSelected : "AUTOMATICO";
     const photo = productPhotoData(product.ID);
-    return `<article class="product-card" data-product-id="${escapeHtml(product.ID)}">
+    return `<article class="product-card${product.__LOCAL_PENDING ? " local-pending" : ""}" data-product-id="${escapeHtml(product.ID)}">
       ${imageTag(photo, product.NOME, "product-image")}
       <div class="product-card-body">
-        <div class="admin-card-badges"><span class="badge">${escapeHtml(product.NICHO)}</span><span class="availability-badge ${statusClass(effective)}">${statusLabel(effective)}</span><span class="publication-badge ${isProductActive(product) ? "published" : "hidden-product"}">${isProductActive(product) ? "Publicado" : "Oculto"}</span></div>
+        <div class="admin-card-badges"><span class="badge">${escapeHtml(product.NICHO)}</span>${product.__LOCAL_PENDING ? '<span class="publication-badge saving-product">Salvando...</span>' : ""}<span class="availability-badge ${statusClass(effective)}">${statusLabel(effective)}</span><span class="publication-badge ${isProductActive(product) ? "published" : "hidden-product"}">${isProductActive(product) ? "Publicado" : "Oculto"}</span></div>
         <h3>${escapeHtml(product.NOME)}</h3>
-        <p>${escapeHtml(product.TAMANHO_EXIBICAO || "")} ${product.COR_TOM ? "· " + escapeHtml(product.COR_TOM) : ""}</p>
+        <p class="product-code">${escapeHtml(product.SKU || "Código pendente")}</p>
+        <p>${product.COR_TOM ? `<b>Variação:</b> ${escapeHtml(product.COR_TOM)}` : "Sem variação de cor/tom"}${product.TAMANHO_EXIBICAO ? ` · ${escapeHtml(product.TAMANHO_EXIBICAO)}` : ""}</p>
         <p class="price">${money(product.PRECO_VENDA)}</p>
         <p>Estoque interno: <b>${numberValue(product.ESTOQUE_ATUAL)}</b></p>
         <label class="quick-status-label">Status no catálogo
@@ -391,22 +525,28 @@ function renderProducts() {
   }).join("") || '<p class="muted">Nenhum produto encontrado.</p>';
 }
 
-window.updateProductStatus = async function updateProductStatus(id, status, select) {
-  const oldValue = state.products.find((product) => sameId(product.ID, id))?.STATUS_CATALOGO || "AUTOMATICO";
-  if (select) select.disabled = true;
-  try {
-    await api("setProductStatus", { id, status });
-    const product = state.products.find((entry) => sameId(entry.ID, id));
-    if (product) product.STATUS_CATALOGO = status;
+window.updateProductStatus = function updateProductStatus(id, status, select) {
+  const product = state.products.find((entry) => sameId(entry.ID, id));
+  if (!product) return toast("Produto não encontrado.");
+  const oldValue = product.STATUS_CATALOGO || "AUTOMATICO";
+  product.STATUS_CATALOGO = status;
+  renderProducts();
+  renderDashboard();
+  saveAdminSnapshot();
+  toast(`Status alterado para “${statusLabel(status)}”.`);
+  const sync = beginSync("Salvando status...");
+  api("setProductStatus", { id, status }).then((result) => {
+    if (result?.product) Object.assign(product, result.product);
+    sync.success("Status salvo");
+  }).catch((error) => {
+    product.STATUS_CATALOGO = oldValue;
+    if (select) select.value = oldValue;
     renderProducts();
     renderDashboard();
-    toast(`Status alterado para “${statusLabel(status)}”.`);
-  } catch (error) {
-    if (select) select.value = oldValue;
-    toast(error.message);
-  } finally {
-    if (select) select.disabled = false;
-  }
+    saveAdminSnapshot();
+    sync.error("Falha ao salvar status");
+    toast(`Não foi possível salvar: ${error.message}`);
+  });
 };
 
 function sizeDisplay() {
@@ -442,6 +582,7 @@ function resetProductForm() {
   state.editingId = null;
   state.pendingFiles = [];
   $("#brand").value = "FITLYNE";
+  $("#niche").value = "MAKEUP";
   $("#initialStock").value = 1;
   $("#minStock").value = 1;
   $("#sizeFrom").value = 36;
@@ -522,24 +663,38 @@ function canvasToBlob(canvas, type, quality) {
 async function prepareImageForUpload(file) {
   if (!file || !String(file.type || "").startsWith("image/")) throw new Error("Selecione um arquivo de imagem válido.");
   if (Number(file.size || 0) > 20 * 1024 * 1024) throw new Error("A foto original deve ter no máximo 20 MB.");
-  const source = await readFileAsDataUrl(file);
-  const image = await loadImageElement(source);
-  const scale = Math.min(1, 1400 / image.naturalWidth, 1750 / image.naturalHeight);
-  const width = Math.max(1, Math.round(image.naturalWidth * scale));
-  const height = Math.max(1, Math.round(image.naturalHeight * scale));
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d", { alpha: false });
-  if (!context) throw new Error("O navegador não conseguiu processar a foto.");
-  context.fillStyle = "#fff";
-  context.fillRect(0, 0, width, height);
-  context.drawImage(image, 0, 0, width, height);
-  const blob = await canvasToBlob(canvas, "image/jpeg", 0.8);
-  const dataUrl = await readFileAsDataUrl(blob);
-  const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
-  if (!base64) throw new Error("A foto ficou vazia durante a preparação.");
-  return { base64, mimeType: "image/jpeg", fileName: String(file.name || "foto.jpg").replace(/\.[^.]+$/, "") + ".jpg" };
+
+  let image;
+  let cleanup = () => {};
+  try {
+    if ("createImageBitmap" in window) {
+      image = await createImageBitmap(file, { imageOrientation: "from-image" });
+      cleanup = () => image.close?.();
+    } else {
+      const source = await readFileAsDataUrl(file);
+      image = await loadImageElement(source);
+    }
+    const sourceWidth = image.width || image.naturalWidth;
+    const sourceHeight = image.height || image.naturalHeight;
+    const scale = Math.min(1, 1200 / sourceWidth, 1500 / sourceHeight);
+    const width = Math.max(1, Math.round(sourceWidth * scale));
+    const height = Math.max(1, Math.round(sourceHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d", { alpha: false, desynchronized: true });
+    if (!context) throw new Error("O navegador não conseguiu processar a foto.");
+    context.fillStyle = "#fff";
+    context.fillRect(0, 0, width, height);
+    context.drawImage(image, 0, 0, width, height);
+    const blob = await canvasToBlob(canvas, "image/jpeg", 0.76);
+    const dataUrl = await readFileAsDataUrl(blob);
+    const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+    if (!base64) throw new Error("A foto ficou vazia durante a preparação.");
+    return { base64, mimeType: "image/jpeg", fileName: String(file.name || "foto.jpg").replace(/\.[^.]+$/, "") + ".jpg" };
+  } finally {
+    cleanup();
+  }
 }
 
 async function uploadImage(file, productId, index) {
@@ -549,7 +704,7 @@ async function uploadImage(file, productId, index) {
     productId: String(productId),
     order: index + 1,
     principal: index === 0 ? "SIM" : "NAO"
-  });
+  }, true, 60000);
   if (result?.photo?.URL_ORIGINAL) return result.photo;
   if (!result?.secure_url || !result?.public_id) throw new Error("A API não devolveu os dados da foto.");
   return {
@@ -569,167 +724,281 @@ async function uploadImage(file, productId, index) {
   };
 }
 
-async function uploadPendingPhotos(productId, button) {
-  const results = new Array(state.pendingFiles.length);
+async function uploadPendingPhotos(productId, files, onProgress) {
+  const results = new Array(files.length);
   let cursor = 0;
   let finished = 0;
   async function worker() {
-    while (cursor < state.pendingFiles.length) {
+    while (cursor < files.length) {
       const index = cursor++;
-      results[index] = await uploadImage(state.pendingFiles[index], productId, index);
+      results[index] = await uploadImage(files[index], productId, index);
       finished += 1;
-      button.textContent = `Enviando fotos ${finished}/${state.pendingFiles.length}`;
+      onProgress?.(finished, files.length, results[index], index);
     }
   }
-  await Promise.all(Array.from({ length: Math.min(2, state.pendingFiles.length) }, worker));
+  await Promise.all(Array.from({ length: Math.min(2, files.length) }, worker));
   return results;
 }
 
-async function saveProduct(event) {
+function saveProduct(event) {
   event.preventDefault();
   const button = $("#saveProductBtn");
-  button.disabled = true;
-  button.textContent = "Salvando...";
-  try {
-    const id = state.editingId || uid("PROD");
-    const variants = getVariants();
-    const total = variants.reduce((sum, variant) => sum + Number(variant.ESTOQUE || 0), 0);
-    const product = {
-      ID: id,
-      SKU: id.replace("PROD_", "FIT"),
-      NICHO: $("#niche").value,
-      CATEGORIA: $("#category").value.trim(),
-      MARCA: $("#brand").value.trim(),
-      NOME: $("#productName").value.trim(),
-      DESCRICAO: $("#description").value.trim(),
-      COR_TOM: $("#colorTone").value.trim(),
-      TIPO_TAMANHO: $('input[name="sizeMode"]:checked').value,
-      TAMANHO_EXIBICAO: sizeDisplay(),
-      PRECO_COMPRA: Number($("#purchasePrice").value || 0),
-      PRECO_VENDA: Number($("#salePrice").value || 0),
-      ESTOQUE_ATUAL: total,
-      ESTOQUE_MINIMO: Number($("#minStock").value || 0),
-      STATUS_CATALOGO: $("#catalogStatus").value,
-      ATIVO: $("#activeProduct").checked ? "SIM" : "NAO"
-    };
-    const photos = state.pendingFiles.length ? await uploadPendingPhotos(id, button) : [];
-    button.textContent = "Gravando produto...";
-    await api("saveProduct", { product, variants, photos });
-    await loadAll();
-    resetProductForm();
-    showView("products");
-    toast("Produto salvo com sucesso!");
-  } catch (error) {
-    toast(error.message);
-  } finally {
-    button.disabled = false;
-    button.textContent = "Salvar e publicar";
-  }
+  const id = state.editingId || uid("PROD");
+  const variants = getVariants();
+  const total = variants.reduce((sum, variant) => sum + Number(variant.ESTOQUE || 0), 0);
+  const product = {
+    ID: id,
+    SKU: state.editingId ? (state.products.find((entry) => sameId(entry.ID, id))?.SKU || "") : "Gerando...",
+    NICHO: normalizedNiche($("#niche").value),
+    CATEGORIA: $("#category").value.trim(),
+    MARCA: $("#brand").value.trim(),
+    NOME: $("#productName").value.trim(),
+    DESCRICAO: $("#description").value.trim(),
+    COR_TOM: $("#colorTone").value.trim(),
+    TIPO_TAMANHO: $('input[name="sizeMode"]:checked').value,
+    TAMANHO_EXIBICAO: sizeDisplay(),
+    PRECO_COMPRA: Number($("#purchasePrice").value || 0),
+    PRECO_VENDA: Number($("#salePrice").value || 0),
+    ESTOQUE_ATUAL: total,
+    ESTOQUE_MINIMO: Number($("#minStock").value || 0),
+    STATUS_CATALOGO: $("#catalogStatus").value,
+    ATIVO: $("#activeProduct").checked ? "SIM" : "NAO",
+    __LOCAL_PENDING: true
+  };
+  if (!product.NOME) return toast("Informe o nome do produto.");
+
+  const files = [...state.pendingFiles];
+  const previousProduct = state.products.find((entry) => sameId(entry.ID, id));
+  const previousProductCopy = previousProduct ? { ...previousProduct } : null;
+  const previousVariants = state.variants.filter((entry) => sameId(entry.ID_PRODUTO, id)).map((entry) => ({ ...entry }));
+  const restoreButton = setButtonBusy(button, "Na fila...");
+
+  state.products = state.products.filter((entry) => !sameId(entry.ID, id));
+  state.products.unshift(product);
+  state.variants = state.variants.filter((entry) => !sameId(entry.ID_PRODUTO, id));
+  state.variants.push(...variants.map((entry) => ({ ...entry, ID_PRODUTO: id })));
+  saveAdminSnapshot();
+  populateProductSelects();
+  resetProductForm();
+  showView("products");
+  restoreButton();
+  toast(files.length ? "Produto adicionado. Enviando fotos em segundo plano..." : "Produto adicionado. Salvando em segundo plano...");
+
+  const sync = beginSync(files.length ? "Publicando produto e fotos..." : "Publicando produto...");
+  let productSavedRemotely = false;
+  (async () => {
+    try {
+      const result = await api("saveProduct", { product: { ...product, __LOCAL_PENDING: undefined }, variants, photos: [] });
+      productSavedRemotely = true;
+      const local = state.products.find((entry) => sameId(entry.ID, id));
+      if (local) Object.assign(local, result?.product || product, { __LOCAL_PENDING: files.length > 0 });
+      state.variants = state.variants.filter((entry) => !sameId(entry.ID_PRODUTO, id));
+      state.variants.push(...(result?.variants || variants).map((entry) => ({ ...entry, ID_PRODUTO: id })));
+      if (result?.movement && !state.movements.some((entry) => sameId(entry.ID, result.movement.ID))) state.movements.unshift(result.movement);
+
+      if (files.length) {
+        await uploadPendingPhotos(id, files, (done, count, photo, index) => {
+          if (index === 0) state.photos.filter((entry) => sameId(entry.ID_PRODUTO, id)).forEach((entry) => { entry.PRINCIPAL = "NAO"; });
+          if (photo && !state.photos.some((entry) => sameId(entry.ID, photo.ID))) state.photos.push(photo);
+          setSyncState("saving", `Enviando fotos ${done}/${count}...`);
+          renderProducts();
+          saveAdminSnapshot();
+        });
+      }
+      const finalProduct = state.products.find((entry) => sameId(entry.ID, id));
+      if (finalProduct) delete finalProduct.__LOCAL_PENDING;
+      saveAdminSnapshot();
+      renderProducts();
+      renderDashboard();
+      sync.success("Produto publicado");
+      toast("Produto publicado com sucesso.");
+    } catch (error) {
+      if (!productSavedRemotely) {
+        state.products = state.products.filter((entry) => !sameId(entry.ID, id));
+        state.variants = state.variants.filter((entry) => !sameId(entry.ID_PRODUTO, id));
+        if (previousProductCopy) state.products.unshift(previousProductCopy);
+        state.variants.push(...previousVariants);
+      } else {
+        const local = state.products.find((entry) => sameId(entry.ID, id));
+        if (local) delete local.__LOCAL_PENDING;
+      }
+      saveAdminSnapshot();
+      populateProductSelects();
+      renderProducts();
+      renderDashboard();
+      sync.error(productSavedRemotely ? "Produto salvo; foto pendente" : "Falha na publicação");
+      toast(productSavedRemotely ? `O produto foi salvo, mas uma foto não foi enviada: ${error.message}` : `Não foi possível publicar: ${error.message}`);
+    }
+  })();
 }
 
-window.editProduct = function editProduct(id) {
-  const product = state.products.find((entry) => sameId(entry.ID, id));
-  if (!product) return;
-  resetProductForm();
-  state.editingId = id;
-  $("#productId").value = id;
-  $("#productFormTitle").textContent = "Editar produto";
-  $("#niche").value = product.NICHO;
-  $("#category").value = product.CATEGORIA;
-  $("#brand").value = product.MARCA;
-  $("#productName").value = product.NOME;
-  $("#description").value = product.DESCRICAO || "";
-  $("#colorTone").value = product.COR_TOM || "";
-  $("#purchasePrice").value = product.PRECO_COMPRA || 0;
-  $("#salePrice").value = product.PRECO_VENDA || 0;
-  $("#initialStock").value = product.ESTOQUE_ATUAL || 0;
-  $("#minStock").value = product.ESTOQUE_MINIMO || 0;
-  $("#catalogStatus").value = product.STATUS_CATALOGO || "AUTOMATICO";
-  $("#activeProduct").checked = isProductActive(product);
-  const mode = product.TIPO_TAMANHO || "UNICO";
-  $(`input[name="sizeMode"][value="${mode}"]`).checked = true;
-  if (mode === "UNICO") {
-    const match = String(product.TAMANHO_EXIBICAO || "").match(/(\d+).*?(\d+)/);
-    if (match) { $("#sizeFrom").value = match[1]; $("#sizeTo").value = match[2]; }
-  } else if (mode === "SEPARADOS") {
-    const variants = state.variants.filter((variant) => String(variant.ID_PRODUTO) === String(id));
-    $("#sizeChips").innerHTML = "";
-    const used = new Set();
-    variants.forEach((variant) => {
-      used.add(String(variant.TAMANHO));
-      addSizeChip(String(variant.TAMANHO), Number(variant.ESTOQUE || 0), true);
-    });
-    ["P", "M", "G", "GG"].filter((size) => !used.has(size)).forEach((size) => addSizeChip(size));
-  }
-  const oldPhotos = productPhotos(id);
-  if (oldPhotos.length) {
-    $("#photoPreview").innerHTML = oldPhotos.map((photo) => {
-      const original = String(photo.URL_ORIGINAL || "").trim() || placeholder();
-      const src = String(photo.URL_CATALOGO || "").trim() || original;
-      return `<div class="photo-preview existing-photo"><img loading="lazy" decoding="async" src="${escapeHtml(src)}" data-fallback-src="${escapeHtml(original)}" alt="Foto publicada"><span>Publicada</span></div>`;
-    }).join("");
-  }
-  toggleSizeMode();
-  showView("productForm");
-};
-
-window.deleteProduct = async function deleteProduct(id) {
-  if (!confirm("Excluir este produto?")) return;
-  try {
-    await api("deleteProduct", { id });
-    state.products = state.products.filter((product) => !sameId(product.ID, id));
-    state.photos = state.photos.filter((photo) => !sameId(photo.ID_PRODUTO, id));
-    renderProducts();
-    renderDashboard();
-    toast("Produto excluído.");
-  } catch (error) {
-    toast(error.message);
-  }
-};
-
 function populateProductSelects() {
-  const options = '<option value="">Selecione</option>' + state.products.filter(isProductActive).map((product) => `<option value="${product.ID}">${escapeHtml(product.NOME)} — estoque ${product.ESTOQUE_ATUAL}</option>`).join("");
+  const options = '<option value="">Selecione</option>' + state.products.filter(isProductActive).map((product) => `<option value="${product.ID}">${escapeHtml(product.SKU || "")} · ${escapeHtml(product.NOME)}${product.COR_TOM ? ` · ${escapeHtml(product.COR_TOM)}` : ""} — estoque ${numberValue(product.ESTOQUE_ATUAL)}</option>`).join("");
   $("#stockProduct").innerHTML = options;
   $("#saleProduct").innerHTML = options;
 }
 
-async function saveStock(event) {
+function saveStock(event) {
   event.preventDefault();
-  try {
-    const result = await api("stockMovement", { productId: $("#stockProduct").value, type: $("#stockType").value, qty: Number($("#stockQty").value), reason: $("#stockReason").value });
-    const product = state.products.find((entry) => sameId(entry.ID, $("#stockProduct").value));
-    if (product) product.ESTOQUE_ATUAL = result.stock;
-    await loadAll();
+  const productId = $("#stockProduct").value;
+  const type = $("#stockType").value;
+  const qty = Number($("#stockQty").value);
+  const reason = $("#stockReason").value;
+  const product = state.products.find((entry) => sameId(entry.ID, productId));
+  if (!product) return toast("Selecione um produto.");
+  if (!Number.isFinite(qty) || qty < 0 || (type !== "AJUSTE" && qty === 0)) return toast("Informe uma quantidade válida.");
+
+  const oldStock = numberValue(product.ESTOQUE_ATUAL);
+  let next = oldStock;
+  if (type === "ENTRADA" || type === "DEVOLUCAO") next += qty;
+  else if (type === "SAIDA" || type === "PERDA") next -= qty;
+  else if (type === "AJUSTE") next = qty;
+  if (next < 0) return toast("Estoque insuficiente.");
+
+  const tempId = uid("LOCAL_MOV");
+  const tempMovement = { ID: tempId, DATA: new Date().toISOString(), ID_PRODUTO: product.ID, PRODUTO: product.NOME, TIPO: type, QUANTIDADE: qty, MOTIVO: reason, __LOCAL_PENDING: true };
+  product.ESTOQUE_ATUAL = next;
+  state.movements.unshift(tempMovement);
+  saveAdminSnapshot();
+  populateProductSelects();
+  renderCurrentStock();
+  renderMovements();
+  renderDashboard();
+  event.target.reset();
+  toast("Estoque atualizado.");
+
+  const sync = beginSync("Salvando estoque...");
+  api("stockMovement", { productId, type, qty, reason }).then((result) => {
+    if (result?.product) Object.assign(product, result.product);
+    state.movements = state.movements.filter((entry) => !sameId(entry.ID, tempId));
+    if (result?.movement) state.movements.unshift(result.movement);
+    saveAdminSnapshot();
+    populateProductSelects();
+    renderCurrentStock();
     renderMovements();
     renderDashboard();
-    event.target.reset();
-    toast("Estoque atualizado.");
-  } catch (error) {
-    toast(error.message);
-  }
+    sync.success("Estoque salvo");
+    if (result?.notifications?.ready) toast(`${result.notifications.ready} cliente(s) aguardando este produto.`);
+  }).catch((error) => {
+    product.ESTOQUE_ATUAL = oldStock;
+    state.movements = state.movements.filter((entry) => !sameId(entry.ID, tempId));
+    saveAdminSnapshot();
+    populateProductSelects();
+    renderCurrentStock();
+    renderMovements();
+    renderDashboard();
+    sync.error("Falha ao salvar estoque");
+    toast(`Alteração desfeita: ${error.message}`);
+  });
+}
+
+function renderCurrentStock() {
+  const target = $("#currentStockList");
+  if (!target) return;
+  const products = [...state.products].filter(isProductActive).sort((a, b) => String(a.NOME || "").localeCompare(String(b.NOME || ""), "pt-BR"));
+  target.innerHTML = products.length ? products.map((product) => {
+    const stock = numberValue(product.ESTOQUE_ATUAL);
+    const minimum = numberValue(product.ESTOQUE_MINIMO);
+    const low = stock > 0 && minimum > 0 && stock < minimum;
+    return `<article class="stock-card"><div><span class="badge">${escapeHtml(normalizedNiche(product.NICHO))}</span><h3>${escapeHtml(product.NOME)}</h3><small>${escapeHtml(product.SKU || "")} ${product.COR_TOM ? `· ${escapeHtml(product.COR_TOM)}` : ""} ${product.TAMANHO_EXIBICAO ? `· ${escapeHtml(product.TAMANHO_EXIBICAO)}` : ""}</small></div><div class="stock-number ${stock <= 0 ? "zero" : low ? "low" : "ok"}"><strong>${stock}</strong><span>${stock <= 0 ? "Esgotado" : low ? "Baixo" : "Em estoque"}</span></div></article>`;
+  }).join("") : '<p class="muted">Nenhum produto cadastrado.</p>';
 }
 
 function renderMovements() {
-  $("#movementList").innerHTML = state.movements.slice(0, 30).map((movement) => `<div class="list-item"><div><b>${escapeHtml(movement.PRODUTO)}</b><small>${escapeHtml(movement.TIPO)} · ${escapeHtml(movement.MOTIVO || "")}</small></div><span class="amount">${movement.QUANTIDADE}</span></div>`).join("") || '<p class="muted">Sem movimentações.</p>';
+  $("#movementList").innerHTML = state.movements.slice(0, 30).map((movement) => `<div class="list-item"><div><b>${escapeHtml(movement.PRODUTO)}</b><small>${escapeHtml(movement.TIPO)} · ${escapeHtml(movement.MOTIVO || "")}</small></div><span class="amount">${movement.QUANTIDADE}${movement.__LOCAL_PENDING ? ' <small class="saving-inline">salvando</small>' : ""}</span></div>`).join("") || '<p class="muted">Sem movimentações.</p>';
+}
+
+function resetSaleForm() {
+  $("#saleForm").reset();
+  $("#saleQty").value = 1;
+  $("#saleDiscount").value = 0;
+  $("#saleEditId").value = "";
+  $("#saveSaleBtn").textContent = "Finalizar venda";
+  $("#cancelSaleEdit").hidden = true;
+}
+
+function editSale(id) {
+  const sale = state.sales.find((entry) => sameId(entry.ID, id));
+  if (!sale || !saleIsActive(sale)) return toast("Venda não disponível para edição.");
+  $("#saleEditId").value = sale.ID;
+  $("#saleProduct").value = sale.ID_PRODUTO;
+  $("#saleQty").value = numberValue(sale.QUANTIDADE);
+  $("#saleClient").value = sale.CLIENTE || "";
+  $("#salePhone").value = sale.TELEFONE || "";
+  $("#saleDiscount").value = numberValue(sale.DESCONTO);
+  $("#paymentMethod").value = sale.PAGAMENTO || "PIX";
+  $("#saveSaleBtn").textContent = "Salvar alteração";
+  $("#cancelSaleEdit").hidden = false;
+  $("#saleForm").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function cancelSale(id) {
+  const sale = state.sales.find((entry) => sameId(entry.ID, id));
+  if (!sale || !saleIsActive(sale)) return toast("Venda já cancelada.");
+  if (!confirm(`Excluir a venda de ${sale.PRODUTO}? O estoque será devolvido automaticamente.`)) return;
+  const sync = beginSync("Estornando venda...");
+  try {
+    const result = await api("cancelSale", { id });
+    Object.assign(sale, result?.sale || { STATUS: "CANCELADA" });
+    if (result?.product) { const product = state.products.find((entry) => sameId(entry.ID, result.product.ID)); if (product) Object.assign(product, result.product); }
+    if (Array.isArray(result?.clients)) state.clients = result.clients;
+    saveAdminSnapshot(); populateProductSelects(); renderSales(); renderCurrentStock(); renderDashboard(); renderFinance();
+    sync.success("Venda excluída"); toast("Venda excluída e estoque estornado.");
+  } catch (error) { sync.error("Falha ao excluir venda"); toast(error.message); }
 }
 
 async function saveSale(event) {
   event.preventDefault();
-  try {
-    await api("saveSale", { productId: $("#saleProduct").value, qty: Number($("#saleQty").value), client: $("#saleClient").value, phone: $("#salePhone").value, discount: Number($("#saleDiscount").value || 0), payment: $("#paymentMethod").value });
-    await loadAll();
-    renderSales();
-    event.target.reset();
-    $("#saleQty").value = 1;
-    $("#saleDiscount").value = 0;
-    toast("Venda registrada!");
-  } catch (error) {
-    toast(error.message);
+  const editId = $("#saleEditId").value.trim();
+  const productId = $("#saleProduct").value;
+  const product = state.products.find((entry) => sameId(entry.ID, productId));
+  const qty = Number($("#saleQty").value || 1);
+  const client = $("#saleClient").value.trim();
+  const phone = $("#salePhone").value.trim();
+  const discount = Number($("#saleDiscount").value || 0);
+  const payment = $("#paymentMethod").value;
+  if (!product) return toast("Selecione um produto.");
+  if (!Number.isFinite(qty) || qty <= 0) return toast("Informe uma quantidade válida.");
+
+  if (editId) {
+    const sync = beginSync("Salvando alteração...");
+    try {
+      const result = await api("updateSale", { id: editId, productId, qty, client, phone, discount, payment });
+      const index = state.sales.findIndex((entry) => sameId(entry.ID, editId));
+      if (index >= 0 && result?.sale) state.sales[index] = result.sale;
+      (result?.products || []).forEach((changed) => { const local = state.products.find((entry) => sameId(entry.ID, changed.ID)); if (local) Object.assign(local, changed); });
+      if (Array.isArray(result?.clients)) state.clients = result.clients;
+      resetSaleForm(); saveAdminSnapshot(); populateProductSelects(); renderSales(); renderCurrentStock(); renderDashboard(); renderFinance();
+      sync.success("Venda atualizada"); toast("Venda atualizada e estoque recalculado.");
+    } catch (error) { sync.error("Falha ao editar venda"); toast(error.message); }
+    return;
   }
+
+  const oldStock = numberValue(product.ESTOQUE_ATUAL);
+  if (oldStock < qty) return toast("Estoque insuficiente.");
+  const total = Math.max(0, numberValue(product.PRECO_VENDA) * qty - discount);
+  const tempSaleId = uid("LOCAL_VENDA");
+  const tempMovementId = uid("LOCAL_MOV");
+  const tempSale = { ID: tempSaleId, DATA: new Date().toISOString(), ID_PRODUTO: product.ID, PRODUTO: product.NOME, QUANTIDADE: qty, VALOR_UNITARIO: product.PRECO_VENDA, DESCONTO: discount, TOTAL: total, CLIENTE: client, TELEFONE: phone, PAGAMENTO: payment, STATUS: "ATIVA", __LOCAL_PENDING: true };
+  const tempMovement = { ID: tempMovementId, DATA: new Date().toISOString(), ID_PRODUTO: product.ID, PRODUTO: product.NOME, TIPO: "VENDA", QUANTIDADE: qty, MOTIVO: "VENDA", __LOCAL_PENDING: true };
+  product.ESTOQUE_ATUAL = oldStock - qty; state.sales.unshift(tempSale); state.movements.unshift(tempMovement);
+  saveAdminSnapshot(); populateProductSelects(); renderSales(); renderCurrentStock(); renderDashboard(); resetSaleForm(); toast(`Venda registrada: ${money(total)}.`);
+  const sync = beginSync("Salvando venda...");
+  api("saveSale", { productId, qty, client, phone, discount, payment }).then((result) => {
+    state.sales = state.sales.filter((entry) => !sameId(entry.ID, tempSaleId)); state.movements = state.movements.filter((entry) => !sameId(entry.ID, tempMovementId));
+    if (result?.sale) state.sales.unshift(result.sale); if (result?.movement) state.movements.unshift(result.movement); if (result?.product) Object.assign(product, result.product);
+    saveAdminSnapshot(); populateProductSelects(); renderSales(); renderCurrentStock(); renderDashboard(); sync.success("Venda salva");
+  }).catch((error) => {
+    product.ESTOQUE_ATUAL = oldStock; state.sales = state.sales.filter((entry) => !sameId(entry.ID, tempSaleId)); state.movements = state.movements.filter((entry) => !sameId(entry.ID, tempMovementId));
+    saveAdminSnapshot(); populateProductSelects(); renderSales(); renderCurrentStock(); renderDashboard(); sync.error("Falha ao salvar venda"); toast(`Venda desfeita: ${error.message}`);
+  });
 }
 
 function renderSales() {
-  $("#salesList").innerHTML = state.sales.slice(0, 30).map((sale) => `<div class="list-item"><div><b>${escapeHtml(sale.PRODUTO)}</b><small>${escapeHtml(sale.CLIENTE || "Sem cliente")} · ${escapeHtml(sale.PAGAMENTO)}</small></div><span class="amount positive">${money(sale.TOTAL)}</span></div>`).join("") || '<p class="muted">Sem vendas.</p>';
+  $("#salesList").innerHTML = state.sales.slice(0, 50).map((sale) => {
+    const active = saleIsActive(sale);
+    return `<div class="list-item sale-row ${active ? "" : "cancelled-sale"}"><div><b>${escapeHtml(sale.PRODUTO)}</b><small>${escapeHtml(sale.CLIENTE || "Sem cliente")} · ${escapeHtml(sale.PAGAMENTO)} · ${numberValue(sale.QUANTIDADE)} un. ${active ? "" : "· CANCELADA"}</small></div><div class="sale-actions"><span class="amount ${active ? "positive" : ""}">${money(sale.TOTAL)}${sale.__LOCAL_PENDING ? ' <small class="saving-inline">salvando</small>' : ""}</span>${active && !sale.__LOCAL_PENDING ? `<button type="button" class="ghost compact" data-sale-action="edit" data-id="${escapeHtml(sale.ID)}">Editar</button><button type="button" class="danger compact" data-sale-action="delete" data-id="${escapeHtml(sale.ID)}">Excluir</button>` : ""}</div></div>`;
+  }).join("") || '<p class="muted">Sem vendas.</p>';
 }
 
 
@@ -808,38 +1077,73 @@ function renderRequests() {
   updateRequestIndicators();
 }
 
-async function updateRequestStatus(id, status) {
-  try {
-    await api("updateRequestStatus", { id, status });
-    await loadAll();
+function updateRequestStatus(id, status) {
+  const request = state.requests.find((entry) => sameId(entry.ID, id));
+  if (!request) return toast("Solicitação não encontrada.");
+  const oldStatus = request.STATUS || "AGUARDANDO";
+  request.STATUS = status;
+  renderRequests();
+  renderDashboard();
+  saveAdminSnapshot();
+  toast("Solicitação atualizada.");
+  const sync = beginSync("Salvando solicitação...");
+  api("updateRequestStatus", { id, status }).then((result) => {
+    if (result?.request) Object.assign(request, result.request);
+    saveAdminSnapshot();
+    sync.success("Solicitação salva");
+  }).catch((error) => {
+    request.STATUS = oldStatus;
     renderRequests();
     renderDashboard();
-    toast("Solicitação atualizada.");
-  } catch (error) { toast(error.message); }
+    saveAdminSnapshot();
+    sync.error("Falha ao salvar solicitação");
+    toast(`Alteração desfeita: ${error.message}`);
+  });
 }
 
 async function notifyRequest(id) {
+  const request = state.requests.find((entry) => sameId(entry.ID, id));
+  if (!request) return toast("Solicitação não encontrada.");
+  const sync = beginSync("Enviando WhatsApp...");
   try {
     const result = await api("notifyRequest", { id });
-    await loadAll();
+    Object.assign(request, result?.request || { STATUS: "NOTIFICADO", NOTIFICADO_EM: new Date().toISOString() });
+    saveAdminSnapshot();
     renderRequests();
     renderDashboard();
+    sync.success("WhatsApp enviado");
     toast(result?.message || "Aviso enviado pelo WhatsApp.");
-  } catch (error) { toast(error.message); }
+  } catch (error) {
+    sync.error("Falha no WhatsApp");
+    toast(error.message);
+  }
 }
 
 async function notifyAllReady() {
   const button = $("#notifyAllReadyBtn");
-  button.disabled = true;
-  button.textContent = "Enviando...";
+  const restoreButton = setButtonBusy(button, "Enviando...");
+  const sync = beginSync("Avisando clientes...");
   try {
     const result = await api("notifyAllReady", {});
-    await loadAll();
+    let remaining = Number(result?.sent || 0);
+    state.requests.forEach((request) => {
+      if (remaining > 0 && String(request.STATUS || "").toUpperCase() === "PRONTO_PARA_AVISAR") {
+        request.STATUS = "NOTIFICADO";
+        request.NOTIFICADO_EM = new Date().toISOString();
+        remaining -= 1;
+      }
+    });
+    saveAdminSnapshot();
     renderRequests();
     renderDashboard();
+    sync.success("Avisos enviados");
     toast(`${result.sent || 0} aviso(s) enviado(s).${result.failed ? ` ${result.failed} falharam.` : ""}`);
-  } catch (error) { toast(error.message); }
-  finally { button.disabled = false; button.textContent = "Avisar clientes prontos"; }
+  } catch (error) {
+    sync.error("Falha ao enviar avisos");
+    toast(error.message);
+  } finally {
+    restoreButton();
+  }
 }
 
 function openRequestWhatsapp(id) {
@@ -898,65 +1202,170 @@ function renderClients() {
   $("#clientsList").innerHTML = state.clients.map((client) => `<div class="list-item"><div><b>${escapeHtml(client.NOME)}</b><small>${escapeHtml(client.TELEFONE || "")} · ${client.COMPRAS || 0} compras</small></div><span>${money(client.TOTAL_GASTO)}</span></div>`).join("") || '<p class="muted">Sem clientes.</p>';
 }
 
-async function saveExpense(event) {
+function saveExpense(event) {
   event.preventDefault();
-  try {
-    await api("saveExpense", { description: $("#expenseDescription").value, category: $("#expenseCategory").value, value: Number($("#expenseValue").value) });
-    await loadAll();
+  const description = $("#expenseDescription").value.trim();
+  const category = $("#expenseCategory").value;
+  const value = Number($("#expenseValue").value);
+  if (!description) return toast("Informe a descrição da despesa.");
+  if (!Number.isFinite(value) || value < 0) return toast("Informe um valor válido.");
+  const tempId = uid("LOCAL_DESP");
+  const tempExpense = { ID: tempId, DATA: new Date().toISOString(), DESCRICAO: description, CATEGORIA: category, VALOR: value, __LOCAL_PENDING: true };
+  state.expenses.unshift(tempExpense);
+  saveAdminSnapshot();
+  renderFinance();
+  event.target.reset();
+  toast("Despesa registrada.");
+  const sync = beginSync("Salvando despesa...");
+  api("saveExpense", { description, category, value }).then((result) => {
+    state.expenses = state.expenses.filter((entry) => !sameId(entry.ID, tempId));
+    if (result?.expense) state.expenses.unshift(result.expense);
+    saveAdminSnapshot();
     renderFinance();
-    event.target.reset();
-    toast("Despesa registrada.");
-  } catch (error) {
-    toast(error.message);
-  }
+    sync.success("Despesa salva");
+  }).catch((error) => {
+    state.expenses = state.expenses.filter((entry) => !sameId(entry.ID, tempId));
+    saveAdminSnapshot();
+    renderFinance();
+    sync.error("Falha ao salvar despesa");
+    toast(`Registro desfeito: ${error.message}`);
+  });
 }
 
 function renderFinance() {
-  const revenue = state.sales.reduce((sum, sale) => sum + Number(sale.TOTAL || 0), 0);
+  const revenue = state.sales.filter(saleIsActive).reduce((sum, sale) => sum + Number(sale.TOTAL || 0), 0);
   const expenses = state.expenses.reduce((sum, expense) => sum + Number(expense.VALOR || 0), 0);
-  $("#financeStats").innerHTML = [["Faturamento", money(revenue)], ["Despesas", money(expenses)], ["Resultado", money(revenue - expenses)], ["Vendas", state.sales.length]].map(([label, value]) => `<div class="stat"><strong>${value}</strong><span>${label}</span></div>`).join("");
-  $("#expensesList").innerHTML = state.expenses.slice(0, 30).map((expense) => `<div class="list-item"><div><b>${escapeHtml(expense.DESCRICAO)}</b><small>${escapeHtml(expense.CATEGORIA || "")}</small></div><span class="amount negative">${money(expense.VALOR)}</span></div>`).join("") || '<p class="muted">Sem despesas.</p>';
+  $("#financeStats").innerHTML = [["Faturamento", money(revenue)], ["Despesas", money(expenses)], ["Resultado", money(revenue - expenses)], ["Vendas", state.sales.filter(saleIsActive).length]].map(([label, value]) => `<div class="stat"><strong>${value}</strong><span>${label}</span></div>`).join("");
+  $("#expensesList").innerHTML = state.expenses.slice(0, 30).map((expense) => `<div class="list-item"><div><b>${escapeHtml(expense.DESCRICAO)}</b><small>${escapeHtml(expense.CATEGORIA || "")}</small></div><span class="amount negative">${money(expense.VALOR)}${expense.__LOCAL_PENDING ? ' <small class="saving-inline">salvando</small>' : ""}</span></div>`).join("") || '<p class="muted">Sem despesas.</p>';
 }
 
 function renderSettings() {
   $("#storeWhatsapp").value = state.config.WHATSAPP || "";
   $("#storeNameInput").value = state.config.NOME_LOJA || C.STORE_NAME;
   $("#storeSubtitleInput").value = state.config.SUBTITULO || C.STORE_SUBTITLE;
+  $("#fixedShipping").value = numberValue(state.config.FRETE_FIXO);
+  $("#freeShippingAbove").value = numberValue(state.config.FRETE_GRATIS_ACIMA);
+  $("#deliveryDays").value = numberValue(state.config.PRAZO_ENTREGA_DIAS || 3);
+  $("#storeInstagram").value = state.config.INSTAGRAM || "";
   renderWhatsappApiSettings();
 }
 
-async function saveSettings(event) {
+function saveSettings(event) {
   event.preventDefault();
-  const button = $("#saveSettingsBtn");
   const whatsapp = normalizePhone($("#storeWhatsapp").value);
   if (!validWhatsapp(whatsapp)) return toast("WhatsApp inválido. Use DDI + DDD + número, por exemplo 5591...");
-  button.disabled = true;
-  button.textContent = "Salvando...";
-  try {
-    const settings = {
-      WHATSAPP: whatsapp,
-      NOME_LOJA: $("#storeNameInput").value.trim() || "FITLYNE",
-      SUBTITULO: $("#storeSubtitleInput").value.trim() || "Moda Fitness & Makeup"
-    };
-    await api("saveSettings", settings);
-    Object.assign(state.config, settings);
-    $("#storeWhatsapp").value = whatsapp;
-    $("#brandName").textContent = settings.NOME_LOJA;
-    $("#brandSubtitle").textContent = settings.SUBTITULO;
+  const oldSettings = { ...state.config };
+  const settings = {
+    WHATSAPP: whatsapp,
+    NOME_LOJA: $("#storeNameInput").value.trim() || "FITLYNE",
+    SUBTITULO: $("#storeSubtitleInput").value.trim() || "Moda Fitness, Makeup & Skincare",
+    FRETE_FIXO: numberValue($("#fixedShipping").value),
+    FRETE_GRATIS_ACIMA: numberValue($("#freeShippingAbove").value),
+    PRAZO_ENTREGA_DIAS: numberValue($("#deliveryDays").value || 3),
+    INSTAGRAM: $("#storeInstagram").value.trim()
+  };
+  Object.assign(state.config, settings);
+  $("#storeWhatsapp").value = whatsapp;
+  $("#brandName").textContent = settings.NOME_LOJA;
+  $("#brandSubtitle").textContent = settings.SUBTITULO;
+  renderWhatsappWarning();
+  saveAdminSnapshot();
+  toast("Configurações atualizadas.");
+  const sync = beginSync("Salvando configurações...");
+  api("saveSettings", settings).then(() => {
+    sync.success("Configurações salvas");
+  }).catch((error) => {
+    state.config = oldSettings;
+    renderSettings();
+    $("#brandName").textContent = oldSettings.NOME_LOJA || C.STORE_NAME;
+    $("#brandSubtitle").textContent = oldSettings.SUBTITULO || C.STORE_SUBTITLE;
     renderWhatsappWarning();
-    toast("Configurações salvas.");
-  } catch (error) {
-    toast(error.message);
-  } finally {
-    button.disabled = false;
-    button.textContent = "Salvar configurações";
-  }
+    saveAdminSnapshot();
+    sync.error("Falha ao salvar configurações");
+    toast(`Alteração desfeita: ${error.message}`);
+  });
 }
 
 function testWhatsapp() {
   const phone = $("#storeWhatsapp").value || state.config.WHATSAPP;
   openWhatsapp(phone, "Olá! Este é um teste do WhatsApp da FITLYNE.");
 }
+
+
+window.editProduct = function editProduct(id) {
+  const product = state.products.find((entry) => sameId(entry.ID, id));
+  if (!product) return toast("Produto não encontrado.");
+  resetProductForm();
+  state.editingId = id;
+  $("#productId").value = id;
+  $("#productFormTitle").textContent = "Editar produto";
+  $("#niche").value = normalizedNiche(product.NICHO) || "MAKEUP";
+  $("#category").value = product.CATEGORIA || "";
+  $("#brand").value = product.MARCA || "FITLYNE";
+  $("#productName").value = product.NOME || "";
+  $("#description").value = product.DESCRICAO || "";
+  $("#colorTone").value = product.COR_TOM || "";
+  $("#purchasePrice").value = numberValue(product.PRECO_COMPRA);
+  $("#salePrice").value = numberValue(product.PRECO_VENDA);
+  $("#initialStock").value = numberValue(product.ESTOQUE_ATUAL);
+  $("#minStock").value = numberValue(product.ESTOQUE_MINIMO);
+  $("#catalogStatus").value = String(product.STATUS_CATALOGO || "AUTOMATICO").toUpperCase();
+  $("#activeProduct").checked = isProductActive(product);
+
+  const mode = ["UNICO", "SEPARADOS", "NA"].includes(String(product.TIPO_TAMANHO || "").toUpperCase()) ? String(product.TIPO_TAMANHO).toUpperCase() : "NA";
+  const radio = $(`input[name="sizeMode"][value="${mode}"]`);
+  if (radio) radio.checked = true;
+  const variants = state.variants.filter((entry) => sameId(entry.ID_PRODUTO, id));
+  if (mode === "UNICO") {
+    const match = String(variants[0]?.TAMANHO || product.TAMANHO_EXIBICAO || "").match(/(\d+)\D+(\d+)/);
+    if (match) { $("#sizeFrom").value = match[1]; $("#sizeTo").value = match[2]; }
+  } else if (mode === "SEPARADOS") {
+    $("#sizeChips").innerHTML = "";
+    const rows = variants.length ? variants : String(product.TAMANHO_EXIBICAO || "").split(",").filter(Boolean).map((size) => ({ TAMANHO: size.trim(), ESTOQUE: 0 }));
+    rows.forEach((variant) => addSizeChip(String(variant.TAMANHO || "").trim(), numberValue(variant.ESTOQUE), true));
+  }
+  toggleSizeMode();
+
+  const preview = $("#photoPreview");
+  preview.innerHTML = productPhotos(id).map((photo, index) => {
+    const source = String(photo.URL_CATALOGO || photo.URL_ORIGINAL || placeholder());
+    const fallback = String(photo.URL_ORIGINAL || placeholder());
+    return `<div class="photo-preview existing-photo">${imageTag({ src: source, fallback }, `Foto ${index + 1}`)}<span>${index === 0 ? "Capa atual" : "Foto atual"}</span></div>`;
+  }).join("");
+  showView("productForm");
+};
+
+window.deleteProduct = function deleteProduct(id) {
+  const product = state.products.find((entry) => sameId(entry.ID, id));
+  if (!product) return toast("Produto não encontrado.");
+  if (!window.confirm(`Excluir “${product.NOME}”?`)) return;
+  const productIndex = state.products.findIndex((entry) => sameId(entry.ID, id));
+  const oldProduct = { ...product };
+  const oldPhotos = state.photos.filter((entry) => sameId(entry.ID_PRODUTO, id)).map((entry) => ({ ...entry }));
+  const oldVariants = state.variants.filter((entry) => sameId(entry.ID_PRODUTO, id)).map((entry) => ({ ...entry }));
+  state.products = state.products.filter((entry) => !sameId(entry.ID, id));
+  state.photos = state.photos.filter((entry) => !sameId(entry.ID_PRODUTO, id));
+  state.variants = state.variants.filter((entry) => !sameId(entry.ID_PRODUTO, id));
+  saveAdminSnapshot();
+  populateProductSelects();
+  renderProducts();
+  renderDashboard();
+  toast("Produto excluído.");
+  const sync = beginSync("Excluindo produto...");
+  api("deleteProduct", { id }).then(() => {
+    sync.success("Produto excluído");
+  }).catch((error) => {
+    state.products.splice(Math.max(0, productIndex), 0, oldProduct);
+    state.photos.push(...oldPhotos);
+    state.variants.push(...oldVariants);
+    saveAdminSnapshot();
+    populateProductSelects();
+    renderProducts();
+    renderDashboard();
+    sync.error("Falha ao excluir");
+    toast(`Exclusão desfeita: ${error.message}`);
+  });
+};
 
 function bind() {
   $("#menuBtn").onclick = openDrawer;
@@ -990,6 +1399,8 @@ function bind() {
   });
   $("#stockForm").onsubmit = saveStock;
   $("#saleForm").onsubmit = saveSale;
+  $("#cancelSaleEdit").onclick = resetSaleForm;
+  $("#salesList").addEventListener("click", (event) => { const button = event.target.closest("button[data-sale-action]"); if (!button) return; if (button.dataset.saleAction === "edit") editSale(button.dataset.id); if (button.dataset.saleAction === "delete") cancelSale(button.dataset.id); });
   $("#expenseForm").onsubmit = saveExpense;
   $("#settingsForm").onsubmit = saveSettings;
   $("#testWhatsappBtn").onclick = testWhatsapp;
@@ -1054,6 +1465,7 @@ async function init() {
     if (!isAuthenticated() && event.message) setLoginMessage(`Erro ao carregar o sistema: ${event.message}`, "error");
   });
   installImageFallback();
+  prewarmApi();
   bind();
   resetProductForm();
   setAuthenticatedUI(false);
@@ -1061,12 +1473,22 @@ async function init() {
   setTimeout(() => $("#pinInput")?.focus(), 0);
   cleanOldCacheOnce();
   if (state.token) {
-    try {
-      await loadAll();
+    const hadSnapshot = loadAdminSnapshot();
+    if (hadSnapshot) {
       setAuthenticatedUI(true);
       showView("dashboard");
-    } catch (error) {
-      logout();
+      loadAll().then(() => {
+        if (state.view === "dashboard") renderDashboard();
+      }).catch((error) => {
+        console.warn("Sessão rápida não pôde ser atualizada:", error);
+        if (/sessão|token|autoriz/i.test(error.message || "")) logout();
+        else toast("Abrimos os últimos dados salvos. A internet está lenta.");
+      });
+    } else {
+      loadAll().then(() => {
+        setAuthenticatedUI(true);
+        showView("dashboard");
+      }).catch(() => logout());
     }
   }
 }

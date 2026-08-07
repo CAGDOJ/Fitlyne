@@ -7,13 +7,13 @@
   <title>Catálogo FITLYNE</title>
   <link rel="icon" href="./favicon.ico" sizes="any">
   <link rel="icon" type="image/svg+xml" href="./assets/icon.svg">
-  <link rel="stylesheet" href="catalog.css?v=2026-07-31-profissional-avisos">
+  <link rel="stylesheet" href="catalog.css?v=2026-08-06-loja-pro">
 </head>
 <body>
   <header class="catalog-header">
     <div>
       <strong id="storeName">FITLYNE</strong>
-      <small id="storeSubtitle">Moda Fitness & Makeup</small>
+      <small id="storeSubtitle">Moda Fitness, Makeup & Skincare</small>
     </div>
     <button id="openCart" class="cart-button" aria-label="Abrir carrinho">
       Carrinho <span id="cartCount">0</span>
@@ -24,17 +24,24 @@
     <section class="hero">
       <span>Nova coleção</span>
       <h1>Encontre seu estilo</h1>
-      <p>Moda fitness e maquiagem em um só lugar.</p>
+      <p>Moda fitness, makeup e skincare em um só lugar.</p>
       <button id="openGeneralRequest" type="button" class="hero-request">Não encontrou? Solicite um produto</button>
     </section>
 
     <section class="tools">
       <input id="searchInput" placeholder="Buscar no catálogo">
       <div class="filters">
-        <button class="active" data-filter="">Todos</button>
         <button data-filter="FITNESS">Fitness</button>
         <button data-filter="MAKEUP">Makeup</button>
+        <button data-filter="SKINCARE">Skincare</button>
+        <button class="active" data-filter="">Todos</button>
       </div>
+      <select id="sortSelect" class="catalog-sort" aria-label="Ordenar produtos">
+        <option value="CLICKS">Mais clicados</option>
+        <option value="ORDERS">Mais pedidos</option>
+        <option value="PRICE_ASC">Menor valor</option>
+        <option value="PRICE_DESC">Maior valor</option>
+      </select>
     </section>
 
     <section id="catalogGrid" class="catalog-grid"></section>
@@ -85,9 +92,11 @@
     <div id="cartItems" class="cart-items"></div>
 
     <div class="cart-footer">
-      <div class="cart-summary">
-        <span>Total estimado</span>
-        <strong id="cartTotal">R$ 0,00</strong>
+      <div class="cart-totals">
+        <div><span>Subtotal</span><strong id="cartSubtotal">R$ 0,00</strong></div>
+        <div><span>Frete</span><strong id="cartShipping">R$ 0,00</strong></div>
+        <div class="cart-summary"><span>Total estimado</span><strong id="cartTotal">R$ 0,00</strong></div>
+        <small id="cartDelivery" class="delivery-estimate"></small>
       </div>
       <label class="cart-note-label">
         Observação do pedido
@@ -100,6 +109,6 @@
   <div id="cartBackdrop" class="cart-backdrop"></div>
 
   <div id="toast"></div>
-  <script src="./bootstrap.js?v=2026-07-31-profissional-avisos" data-entry="./catalog.js"></script>
+  <script src="./bootstrap.js?v=2026-08-06-loja-pro" data-entry="./catalog.js"></script>
 </body>
 </html>

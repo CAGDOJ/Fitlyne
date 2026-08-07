@@ -1,0 +1,11 @@
+Cole no Console do navegador:
+
+FITLYNE_DIAGNOSTICO()
+
+Esperado:
+build: "2026-08-06-loja-pro"
+api: URL terminada em /exec
+app: "painel" ou "catalogo"
+
+No catálogo, para conferir os produtos carregados:
+console.table(state?.products || [])

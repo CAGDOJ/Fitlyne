@@ -4,26 +4,43 @@ const SHEETS = {
   FOTOS: ["ID", "ID_PRODUTO", "ORDEM", "PRINCIPAL", "PUBLIC_ID", "URL_ORIGINAL", "URL_CATALOGO", "URL_FEED", "URL_STORY", "URL_WHATSAPP", "URL_FACEBOOK", "URL_SHOPEE", "URL_MERCADO_LIVRE", "CRIADO_EM"],
   VARIACOES: ["ID", "ID_PRODUTO", "TAMANHO", "ESTOQUE", "CRIADO_EM"],
   MOVIMENTACOES: ["ID", "DATA", "ID_PRODUTO", "PRODUTO", "TIPO", "QUANTIDADE", "MOTIVO"],
-  VENDAS: ["ID", "DATA", "ID_PRODUTO", "PRODUTO", "QUANTIDADE", "VALOR_UNITARIO", "DESCONTO", "TOTAL", "CLIENTE", "TELEFONE", "PAGAMENTO"],
+  VENDAS: ["ID", "DATA", "ID_PRODUTO", "PRODUTO", "QUANTIDADE", "VALOR_UNITARIO", "DESCONTO", "TOTAL", "CLIENTE", "TELEFONE", "PAGAMENTO", "STATUS", "ATUALIZADO_EM"],
   CLIENTES: ["ID", "NOME", "TELEFONE", "COMPRAS", "TOTAL_GASTO", "ULTIMA_COMPRA"],
   DESPESAS: ["ID", "DATA", "DESCRICAO", "CATEGORIA", "VALOR"],
-  SOLICITACOES: ["ID", "DATA", "TIPO", "ID_PRODUTO", "PRODUTO", "NOME", "TELEFONE", "DETALHES", "CONSENTIMENTO_WHATSAPP", "STATUS", "NOTIFICADO_EM", "META_MESSAGE_ID", "ULTIMO_ERRO", "ATUALIZADO_EM"]
+  SOLICITACOES: ["ID", "DATA", "TIPO", "ID_PRODUTO", "PRODUTO", "NOME", "TELEFONE", "DETALHES", "CONSENTIMENTO_WHATSAPP", "STATUS", "NOTIFICADO_EM", "META_MESSAGE_ID", "ULTIMO_ERRO", "ATUALIZADO_EM"],
+  METRICAS: ["ID_PRODUTO", "CLIQUES", "PEDIDOS", "ATUALIZADO_EM"]
 };
 
 const PUBLIC_CACHE_KEY = "FITLYNE_PUBLIC_CATALOG_PROFISSIONAL";
+const CONFIG_CACHE_KEY = "FITLYNE_CONFIG_CLIQUE_PRONTO";
 const VALID_CATALOG_STATUS = ["AUTOMATICO", "DISPONIVEL", "ESGOTADO", "REPOSICAO"];
+const API_VERSION = "2026-08-06-loja-pro";
+let AUTH_SECRET_MEMORY = "";
 
 function setupSystem() {
   ensureSystem_();
   setDefaultConfig_("ADMIN_PIN", "1234");
   setDefaultConfig_("WHATSAPP", "5591999999999");
   setDefaultConfig_("NOME_LOJA", "FITLYNE");
-  setDefaultConfig_("SUBTITULO", "Moda Fitness & Makeup");
+  setDefaultConfig_("SUBTITULO", "Moda Fitness, Makeup & Skincare");
   setDefaultConfig_("TOKEN_TTL_HORAS", "6");
-  setDefaultConfig_("CATALOG_URL", "https://cagdoj.github.io/Fitlyne/catalog.html");
+  setDefaultConfig_("CATALOG_URL", "https://fitlyne.shop/catalog.html");
+  setDefaultConfig_("FRETE_FIXO", "0");
+  setDefaultConfig_("FRETE_GRATIS_ACIMA", "0");
+  setDefaultConfig_("PRAZO_ENTREGA_DIAS", "3");
+  setDefaultConfig_("INSTAGRAM", "");
+  authSecret_();
   clearPublicCache_();
+  CacheService.getScriptCache().remove(CONFIG_CACHE_KEY);
   migrateLegacyProducts_();
-  return "Sistema FITLYNE profissional atualizado com sucesso.";
+  migrateConfig_();
+  return "Sistema FITLYNE Loja Pro atualizado com sucesso.";
+}
+
+function migrateConfig_() {
+  const cfg = config_();
+  if (!cfg.SUBTITULO || String(cfg.SUBTITULO).trim() === "Moda Fitness & Makeup") setConfig_("SUBTITULO", "Moda Fitness, Makeup & Skincare");
+  if (!cfg.CATALOG_URL || String(cfg.CATALOG_URL).indexOf("cagdoj.github.io/Fitlyne") >= 0) setConfig_("CATALOG_URL", "https://fitlyne.shop/catalog.html");
 }
 
 function ensureSystem_() {
@@ -53,19 +70,35 @@ function ensureProductStatusColumn_() {
   }
 }
 
-function doGet() {
-  return json_({ ok: true, data: { name: "FITLYNE API", version: "login-rapido" } });
+function doGet(e) {
+  return json_({
+    ok: true,
+    data: {
+      name: "FITLYNE API",
+      version: API_VERSION,
+      time: new Date().toISOString()
+    }
+  });
 }
 
 function doPost(e) {
   try {
     const request = JSON.parse((e && e.postData && e.postData.contents) || "{}");
-    const action = request.action || "";
+    const action = String(request.action || "").trim();
     const payload = request.payload || {};
+
+    // Ações públicas: nunca dependem de login ou da configuração da API do WhatsApp.
+    if (action === "ping") return json_({ ok: true, data: { version: API_VERSION, time: new Date().toISOString() } });
     if (action === "login") return json_({ ok: true, data: login_(payload.pin) });
     if (action === "publicCatalog") return json_({ ok: true, data: publicCatalog_() });
-    if (action === "requestProduct") return json_({ ok: true, data: requestProduct_(payload) });
+    if (action === "trackClick") return json_({ ok: true, data: trackMetric_(payload.productId, "CLIQUES", 1) });
+    if (action === "trackOrderIntent") return json_({ ok: true, data: trackOrderIntent_(payload.items || []) });
+    if (action === "requestProduct" || action === "publicRequestProduct" || action === "createRestockRequest") {
+      return json_({ ok: true, data: requestProduct_(payload) });
+    }
+
     if (!validateToken_(request.token)) throw new Error("Sessão inválida. Entre novamente.");
+
     const handlers = {
       bootstrap: bootstrap_,
       uploadImage: uploadImage_,
@@ -74,6 +107,8 @@ function doPost(e) {
       setProductStatus: setProductStatus_,
       stockMovement: stockMovement_,
       saveSale: saveSale_,
+      updateSale: updateSale_,
+      cancelSale: cancelSale_,
       saveExpense: saveExpense_,
       saveSettings: saveSettings_,
       updateRequestStatus: updateRequestStatus_,
@@ -83,6 +118,13 @@ function doPost(e) {
       testWhatsappApi: testWhatsappApi_
     };
     if (!handlers[action]) throw new Error("Ação inválida: " + action);
+    const lockedActions = ["saveProduct", "deleteProduct", "setProductStatus", "stockMovement", "saveSale", "updateSale", "cancelSale", "saveExpense", "saveSettings", "updateRequestStatus", "saveWhatsappApiSettings"];
+    if (lockedActions.indexOf(action) >= 0) {
+      const lock = LockService.getScriptLock();
+      if (!lock.tryLock(15000)) throw new Error("O sistema está concluindo outra alteração. Tente novamente em alguns segundos.");
+      try { return json_({ ok: true, data: handlers[action](payload) }); }
+      finally { lock.releaseLock(); }
+    }
     return json_({ ok: true, data: handlers[action](payload) });
   } catch (error) {
     return json_({ ok: false, error: String(error && error.message ? error.message : error) });
@@ -94,33 +136,84 @@ function json_(object) {
 }
 
 function config_() {
+  const cache = CacheService.getScriptCache();
+  const cached = cache.get(CONFIG_CACHE_KEY);
+  if (cached) {
+    try { return JSON.parse(cached); } catch (error) {}
+  }
   const result = {};
   readSheet_("CONFIG").forEach(function(row) { result[row.CHAVE] = row.VALOR; });
+  try { cache.put(CONFIG_CACHE_KEY, JSON.stringify(result), 300); } catch (error) {}
   return result;
 }
 
 function setDefaultConfig_(key, value) {
-  if (!findRow_("CONFIG", "CHAVE", key)) appendObject_("CONFIG", { CHAVE: key, VALOR: value });
+  if (!findRow_("CONFIG", "CHAVE", key)) {
+    appendObject_("CONFIG", { CHAVE: key, VALOR: value });
+    CacheService.getScriptCache().remove(CONFIG_CACHE_KEY);
+  }
 }
 
 function setConfig_(key, value) {
   upsert_("CONFIG", "CHAVE", { CHAVE: key, VALOR: value });
+  CacheService.getScriptCache().remove(CONFIG_CACHE_KEY);
+}
+
+function authSecret_() {
+  if (AUTH_SECRET_MEMORY) return AUTH_SECRET_MEMORY;
+  const properties = PropertiesService.getScriptProperties();
+  let secret = properties.getProperty("FITLYNE_AUTH_SECRET");
+  if (!secret) {
+    secret = Utilities.getUuid() + Utilities.getUuid() + Utilities.getUuid();
+    properties.setProperty("FITLYNE_AUTH_SECRET", secret);
+  }
+  AUTH_SECRET_MEMORY = secret;
+  return secret;
+}
+
+function base64UrlText_(text) {
+  return Utilities.base64EncodeWebSafe(String(text), Utilities.Charset.UTF_8).replace(/=+$/g, "");
+}
+
+function signTokenPart_(encodedPayload) {
+  const bytes = Utilities.computeHmacSha256Signature(String(encodedPayload), authSecret_(), Utilities.Charset.UTF_8);
+  return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/g, "");
+}
+
+function createToken_(hours) {
+  const ttlHours = Math.max(1, Math.min(Number(hours || 6), 24));
+  const payload = {
+    exp: Date.now() + ttlHours * 3600000,
+    nonce: Utilities.getUuid()
+  };
+  const encoded = base64UrlText_(JSON.stringify(payload));
+  return encoded + "." + signTokenPart_(encoded);
 }
 
 function login_(pin) {
   const config = config_();
   if (String(pin) !== String(config.ADMIN_PIN)) throw new Error("PIN incorreto");
-  const token = Utilities.getUuid();
-  const requested = Number(config.TOKEN_TTL_HORAS || 6) * 3600;
-  const ttl = Math.max(60, Math.min(requested, 21600));
-  CacheService.getScriptCache().put("TOKEN_" + token, "1", ttl);
-
-  // Token e dados iniciais seguem na mesma resposta, reduzindo uma chamada de rede.
-  return { token: token, bootstrap: bootstrap_(config) };
+  return {
+    token: createToken_(config.TOKEN_TTL_HORAS || 6),
+    config: {
+      NOME_LOJA: config.NOME_LOJA || "FITLYNE",
+      SUBTITULO: config.SUBTITULO || "Moda Fitness, Makeup & Skincare"
+    },
+    version: API_VERSION
+  };
 }
 
 function validateToken_(token) {
-  return Boolean(token && CacheService.getScriptCache().get("TOKEN_" + token));
+  try {
+    const parts = String(token || "").split(".");
+    if (parts.length !== 2) return false;
+    if (signTokenPart_(parts[0]) !== parts[1]) return false;
+    const bytes = Utilities.base64DecodeWebSafe(parts[0]);
+    const payload = JSON.parse(Utilities.newBlob(bytes).getDataAsString("UTF-8"));
+    return Number(payload.exp || 0) > Date.now();
+  } catch (error) {
+    return false;
+  }
 }
 
 function bootstrap_(knownConfig) {
@@ -134,6 +227,7 @@ function bootstrap_(knownConfig) {
     clients: readSheet_("CLIENTES"),
     expenses: readSheet_("DESPESAS").reverse(),
     requests: readSheet_("SOLICITACOES").reverse(),
+    metrics: readSheet_("METRICAS"),
     whatsappApi: whatsappApiStatus_(),
     config: knownConfig || config_()
   };
@@ -150,6 +244,32 @@ function sameId_(left, right) {
   return String(left == null ? "" : left).trim() === String(right == null ? "" : right).trim();
 }
 
+function normalizeText_(value) {
+  return String(value == null ? "" : value).trim().toUpperCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
+}
+
+function normalizeNiche_(value) {
+  const text = normalizeText_(value);
+  if (text.indexOf("FIT") >= 0) return "FITNESS";
+  if (text.indexOf("SKIN") >= 0 || text.indexOf("PELE") >= 0) return "SKINCARE";
+  if (text.indexOf("MAKE") >= 0 || text.indexOf("MAQUI") >= 0) return "MAKEUP";
+  return text || "MAKEUP";
+}
+
+function duplicateKey_(product) {
+  return [normalizeNiche_(product.NICHO), normalizeText_(product.NOME), normalizeText_(product.MARCA), normalizeText_(product.COR_TOM), normalizeText_(product.TAMANHO_EXIBICAO)].join("|");
+}
+
+function nextSku_() {
+  let max = 0;
+  readSheet_("PRODUTOS").forEach(function(product) {
+    const match = String(product.SKU || "").trim().match(/^FIT-(\d{6})$/);
+    if (match) max = Math.max(max, Number(match[1]) || 0);
+  });
+  return "FIT-" + String(max + 1).padStart(6, "0");
+}
+
 function isProductActive_(product) {
   const value = String(product && product.ATIVO != null ? product.ATIVO : "").trim().toUpperCase();
   // Compatibilidade com produtos cadastrados em versões antigas: vazio significa publicado.
@@ -157,16 +277,19 @@ function isProductActive_(product) {
 }
 
 function migrateLegacyProducts_() {
-  readSheet_("PRODUTOS").forEach(function(product) {
+  let skuCounter = 0;
+  const rows = readSheet_("PRODUTOS");
+  rows.forEach(function(product) {
+    const match = String(product.SKU || "").trim().match(/^FIT-(\d{6})$/);
+    if (match) skuCounter = Math.max(skuCounter, Number(match[1]) || 0);
+  });
+  rows.forEach(function(product) {
     let changed = false;
-    if (!String(product.ATIVO == null ? "" : product.ATIVO).trim()) {
-      product.ATIVO = "SIM";
-      changed = true;
-    }
-    if (!String(product.STATUS_CATALOGO == null ? "" : product.STATUS_CATALOGO).trim()) {
-      product.STATUS_CATALOGO = "AUTOMATICO";
-      changed = true;
-    }
+    const niche = normalizeNiche_(product.NICHO);
+    if (String(product.NICHO || "") !== niche) { product.NICHO = niche; changed = true; }
+    if (!String(product.ATIVO == null ? "" : product.ATIVO).trim()) { product.ATIVO = "SIM"; changed = true; }
+    if (!String(product.STATUS_CATALOGO == null ? "" : product.STATUS_CATALOGO).trim()) { product.STATUS_CATALOGO = "AUTOMATICO"; changed = true; }
+    if (!/^FIT-\d{6}$/.test(String(product.SKU || "").trim())) { skuCounter += 1; product.SKU = "FIT-" + String(skuCounter).padStart(6, "0"); changed = true; }
     if (changed && product.ID) upsert_("PRODUTOS", "ID", product);
   });
   clearPublicCache_();
@@ -185,7 +308,7 @@ function publicProduct_(product) {
   return {
     ID: product.ID,
     SKU: product.SKU,
-    NICHO: product.NICHO,
+    NICHO: normalizeNiche_(product.NICHO),
     CATEGORIA: product.CATEGORIA,
     MARCA: product.MARCA,
     NOME: product.NOME,
@@ -201,29 +324,62 @@ function publicProduct_(product) {
 }
 
 function publicCatalog_() {
+  if (!SpreadsheetApp.getActive().getSheetByName("METRICAS")) ensureSystem_();
   const cache = CacheService.getScriptCache();
   const cached = cache.get(PUBLIC_CACHE_KEY);
-  if (cached) {
-    try { return JSON.parse(cached); } catch (error) {}
-  }
+  if (cached) { try { return JSON.parse(cached); } catch (error) {} }
   const allConfig = config_();
-  const publicProducts = readSheet_("PRODUTOS").filter(function(product) {
-    return isProductActive_(product);
-  }).map(publicProduct_);
+  const metrics = {};
+  readSheet_("METRICAS").forEach(function(row) { metrics[String(row.ID_PRODUTO || "").trim()] = row; });
+  const publicProducts = readSheet_("PRODUTOS").filter(isProductActive_).map(function(product) {
+    const output = publicProduct_(product);
+    const metric = metrics[String(product.ID || "").trim()] || {};
+    output.CLIQUES = number_(metric.CLIQUES);
+    output.PEDIDOS = number_(metric.PEDIDOS);
+    return output;
+  });
   const publicIds = {};
-  publicProducts.forEach(function(product) { publicIds[String(product.ID == null ? "" : product.ID).trim()] = true; });
+  publicProducts.forEach(function(product) { publicIds[String(product.ID || "").trim()] = true; });
   const data = {
     products: publicProducts,
-    photos: readSheet_("FOTOS").filter(function(photo) { return publicIds[String(photo.ID_PRODUTO == null ? "" : photo.ID_PRODUTO).trim()]; }),
+    photos: readSheet_("FOTOS").filter(function(photo) { return publicIds[String(photo.ID_PRODUTO || "").trim()]; }),
     config: {
       WHATSAPP: allConfig.WHATSAPP || "",
       NOME_LOJA: allConfig.NOME_LOJA || "FITLYNE",
-      SUBTITULO: allConfig.SUBTITULO || "Moda Fitness & Makeup",
-      CATALOG_URL: allConfig.CATALOG_URL || "https://cagdoj.github.io/Fitlyne/catalog.html"
+      SUBTITULO: allConfig.SUBTITULO || "Moda Fitness, Makeup & Skincare",
+      CATALOG_URL: allConfig.CATALOG_URL || "https://fitlyne.shop/catalog.html",
+      FRETE_FIXO: number_(allConfig.FRETE_FIXO),
+      FRETE_GRATIS_ACIMA: number_(allConfig.FRETE_GRATIS_ACIMA),
+      PRAZO_ENTREGA_DIAS: Math.max(0, number_(allConfig.PRAZO_ENTREGA_DIAS || 3)),
+      INSTAGRAM: allConfig.INSTAGRAM || ""
     }
   };
   try { cache.put(PUBLIC_CACHE_KEY, JSON.stringify(data), 60); } catch (error) {}
   return data;
+}
+
+function trackMetric_(productId, field, amount) {
+  if (!SpreadsheetApp.getActive().getSheetByName("METRICAS")) ensureSystem_();
+  const id = String(productId || "").trim();
+  if (!id || ["CLIQUES", "PEDIDOS"].indexOf(field) < 0) return false;
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(3000)) return false;
+  try {
+    const row = findRow_("METRICAS", "ID_PRODUTO", id);
+    const current = row ? rowObject_("METRICAS", row) : { ID_PRODUTO: id, CLIQUES: 0, PEDIDOS: 0 };
+    current[field] = number_(current[field]) + Math.max(1, number_(amount || 1));
+    current.ATUALIZADO_EM = new Date();
+    upsert_("METRICAS", "ID_PRODUTO", current);
+    clearPublicCache_();
+    return true;
+  } finally { lock.releaseLock(); }
+}
+
+function trackOrderIntent_(items) {
+  (Array.isArray(items) ? items : []).forEach(function(item) {
+    trackMetric_(item.productId, "PEDIDOS", Math.max(1, number_(item.quantity || 1)));
+  });
+  return true;
 }
 
 function clearPublicCache_() {
@@ -284,8 +440,22 @@ function uploadImage_(payload) {
     CRIADO_EM: new Date()
   };
   if (productId) {
-    upsert_("FOTOS", "ID", photo);
-    clearPublicCache_();
+    const photoLock = LockService.getScriptLock();
+    photoLock.waitLock(30000);
+    try {
+      if (principal === "SIM") {
+        readSheet_("FOTOS").filter(function(existing) {
+          return sameId_(existing.ID_PRODUTO, productId) && String(existing.PRINCIPAL || "").toUpperCase() === "SIM";
+        }).forEach(function(existing) {
+          existing.PRINCIPAL = "NAO";
+          upsert_("FOTOS", "ID", existing);
+        });
+      }
+      upsert_("FOTOS", "ID", photo);
+      clearPublicCache_();
+    } finally {
+      photoLock.releaseLock();
+    }
   }
   return { cloud_name: CLOUD_NAME, secure_url: data.secure_url, public_id: data.public_id, format: format, version: data.version || "", photo: photo };
 }
@@ -293,6 +463,7 @@ function uploadImage_(payload) {
 function saveProduct_(payload) {
   const product = payload.product || {};
   if (!product.ID || !product.NOME) throw new Error("Dados do produto incompletos.");
+  product.NICHO = normalizeNiche_(product.NICHO);
   let status = String(product.STATUS_CATALOGO || "AUTOMATICO").toUpperCase();
   if (VALID_CATALOG_STATUS.indexOf(status) < 0) status = "AUTOMATICO";
   product.STATUS_CATALOGO = status;
@@ -300,9 +471,34 @@ function saveProduct_(payload) {
   const now = new Date();
   const row = findRow_("PRODUTOS", "ID", product.ID);
   const current = row ? rowObject_("PRODUTOS", row) : null;
-  const object = Object.assign({}, product, { CRIADO_EM: current ? current.CRIADO_EM : now, ATUALIZADO_EM: now });
+  if (!current) {
+    const duplicate = readSheet_("PRODUTOS").find(function(existing) {
+      return !sameId_(existing.ID, product.ID) && duplicateKey_(existing) === duplicateKey_(product);
+    });
+    if (duplicate) throw new Error("Produto duplicado: já existe " + (duplicate.SKU || duplicate.NOME) + " com o mesmo nome, cor/tom e tamanho. Edite o cadastro existente ou altere a variação.");
+    product.SKU = nextSku_();
+  } else {
+    product.SKU = current.SKU || product.SKU || nextSku_();
+    const duplicate = readSheet_("PRODUTOS").find(function(existing) {
+      return !sameId_(existing.ID, product.ID) && duplicateKey_(existing) === duplicateKey_(product);
+    });
+    if (duplicate) throw new Error("Já existe outra variação idêntica cadastrada: " + (duplicate.SKU || duplicate.NOME));
+  }
+  const object = Object.assign({}, product, {
+    CRIADO_EM: current ? current.CRIADO_EM : now,
+    ATUALIZADO_EM: now
+  });
   upsert_("PRODUTOS", "ID", object);
-  replaceByProduct_("VARIACOES", product.ID, payload.variants || []);
+
+  const normalizedVariants = (payload.variants || []).map(function(variant) {
+    return Object.assign({}, variant, {
+      ID: String(variant.ID || ("VAR_" + Utilities.getUuid())),
+      ID_PRODUTO: String(product.ID),
+      CRIADO_EM: variant.CRIADO_EM || now
+    });
+  });
+  replaceByProduct_("VARIACOES", product.ID, normalizedVariants);
+
   const photos = Array.isArray(payload.photos) ? payload.photos : [];
   if (photos.length) {
     readSheet_("FOTOS").filter(function(photo) { return sameId_(photo.ID_PRODUTO, product.ID); }).forEach(function(photo) {
@@ -322,15 +518,27 @@ function saveProduct_(payload) {
       upsert_("FOTOS", "ID", normalized);
     });
   }
+
+  let movement = null;
   if (!current && number_(product.ESTOQUE_ATUAL) > 0) {
-    appendObject_("MOVIMENTACOES", { ID: Utilities.getUuid(), DATA: now, ID_PRODUTO: product.ID, PRODUTO: product.NOME, TIPO: "ENTRADA", QUANTIDADE: product.ESTOQUE_ATUAL, MOTIVO: "ESTOQUE INICIAL" });
+    movement = { ID: Utilities.getUuid(), DATA: now, ID_PRODUTO: product.ID, PRODUTO: product.NOME, TIPO: "ENTRADA", QUANTIDADE: product.ESTOQUE_ATUAL, MOTIVO: "ESTOQUE INICIAL" };
+    appendObject_("MOVIMENTACOES", movement);
   }
+
   const oldStock = current ? number_(current.ESTOQUE_ATUAL) : 0;
   const newStock = number_(product.ESTOQUE_ATUAL);
   let notifications = { ready: 0, sent: 0, failed: 0 };
   if (oldStock <= 0 && newStock > 0) notifications = markReadyAndMaybeNotify_(object);
   clearPublicCache_();
-  return { id: product.ID, notifications: notifications };
+
+  return {
+    id: product.ID,
+    product: object,
+    variants: normalizedVariants,
+    photos: readSheet_("FOTOS").filter(function(photo) { return sameId_(photo.ID_PRODUTO, product.ID); }),
+    movement: movement,
+    notifications: notifications
+  };
 }
 
 function setProductStatus_(payload) {
@@ -361,21 +569,27 @@ function stockMovement_(payload) {
   if (!row) throw new Error("Produto não encontrado");
   const product = rowObject_("PRODUTOS", row);
   const quantity = number_(payload.qty);
+  if (quantity < 0) throw new Error("Informe uma quantidade válida.");
   const oldStock = number_(product.ESTOQUE_ATUAL);
   const type = payload.type;
   let next = oldStock;
   if (type === "ENTRADA" || type === "DEVOLUCAO") next = oldStock + quantity;
   else if (type === "SAIDA" || type === "PERDA") next = oldStock - quantity;
   else if (type === "AJUSTE") next = quantity;
+  else throw new Error("Tipo de movimentação inválido.");
   if (next < 0) throw new Error("Estoque insuficiente");
+
+  const now = new Date();
   product.ESTOQUE_ATUAL = next;
-  product.ATUALIZADO_EM = new Date();
+  product.ATUALIZADO_EM = now;
   upsert_("PRODUTOS", "ID", product);
-  appendObject_("MOVIMENTACOES", { ID: Utilities.getUuid(), DATA: new Date(), ID_PRODUTO: product.ID, PRODUTO: product.NOME, TIPO: type, QUANTIDADE: quantity, MOTIVO: payload.reason || "" });
+  const movement = { ID: Utilities.getUuid(), DATA: now, ID_PRODUTO: product.ID, PRODUTO: product.NOME, TIPO: type, QUANTIDADE: quantity, MOTIVO: payload.reason || "" };
+  appendObject_("MOVIMENTACOES", movement);
+
   let notifications = { ready: 0, sent: 0, failed: 0 };
   if (oldStock <= 0 && next > 0) notifications = markReadyAndMaybeNotify_(product);
   clearPublicCache_();
-  return { stock: next, notifications: notifications };
+  return { stock: next, product: product, movement: movement, notifications: notifications };
 }
 
 function saveSale_(payload) {
@@ -383,19 +597,100 @@ function saveSale_(payload) {
   if (!row) throw new Error("Produto não encontrado");
   const product = rowObject_("PRODUTOS", row);
   const quantity = number_(payload.qty || 1);
+  if (quantity <= 0) throw new Error("Informe uma quantidade válida.");
   if (number_(product.ESTOQUE_ATUAL) < quantity) throw new Error("Estoque insuficiente");
   const unit = number_(product.PRECO_VENDA);
   const discount = number_(payload.discount);
   const total = Math.max(0, unit * quantity - discount);
   const now = new Date();
-  appendObject_("VENDAS", { ID: Utilities.getUuid(), DATA: now, ID_PRODUTO: product.ID, PRODUTO: product.NOME, QUANTIDADE: quantity, VALOR_UNITARIO: unit, DESCONTO: discount, TOTAL: total, CLIENTE: payload.client || "", TELEFONE: payload.phone || "", PAGAMENTO: payload.payment || "PIX" });
+  const sale = {
+    ID: Utilities.getUuid(), DATA: now, ID_PRODUTO: product.ID, PRODUTO: product.NOME,
+    QUANTIDADE: quantity, VALOR_UNITARIO: unit, DESCONTO: discount, TOTAL: total,
+    CLIENTE: payload.client || "", TELEFONE: payload.phone || "", PAGAMENTO: payload.payment || "PIX", STATUS: "ATIVA", ATUALIZADO_EM: now
+  };
+  appendObject_("VENDAS", sale);
   product.ESTOQUE_ATUAL = number_(product.ESTOQUE_ATUAL) - quantity;
   product.ATUALIZADO_EM = now;
   upsert_("PRODUTOS", "ID", product);
-  appendObject_("MOVIMENTACOES", { ID: Utilities.getUuid(), DATA: now, ID_PRODUTO: product.ID, PRODUTO: product.NOME, TIPO: "VENDA", QUANTIDADE: quantity, MOTIVO: "VENDA" });
+  const movement = { ID: Utilities.getUuid(), DATA: now, ID_PRODUTO: product.ID, PRODUTO: product.NOME, TIPO: "VENDA", QUANTIDADE: quantity, MOTIVO: "VENDA" };
+  appendObject_("MOVIMENTACOES", movement);
   if (payload.client || payload.phone) upsertClient_(payload.client || "CLIENTE", payload.phone || "", total, now);
   clearPublicCache_();
-  return { total: total };
+  return { total: total, sale: sale, product: product, movement: movement };
+}
+
+function saleIsActive_(sale) {
+  return ["CANCELADA", "CANCELADO", "EXCLUIDA", "EXCLUÍDA"].indexOf(normalizeText_(sale.STATUS)) < 0;
+}
+
+function updateSale_(payload) {
+  const saleRow = findRow_("VENDAS", "ID", payload.id);
+  if (!saleRow) throw new Error("Venda não encontrada.");
+  const sale = rowObject_("VENDAS", saleRow);
+  if (!saleIsActive_(sale)) throw new Error("Venda cancelada não pode ser editada.");
+  const oldProductRow = findRow_("PRODUTOS", "ID", sale.ID_PRODUTO);
+  const newProductRow = findRow_("PRODUTOS", "ID", payload.productId);
+  if (!oldProductRow || !newProductRow) throw new Error("Produto da venda não encontrado.");
+  const oldProduct = rowObject_("PRODUTOS", oldProductRow);
+  const newProduct = sameId_(sale.ID_PRODUTO, payload.productId) ? oldProduct : rowObject_("PRODUTOS", newProductRow);
+  const oldQty = number_(sale.QUANTIDADE);
+  const newQty = number_(payload.qty || 1);
+  if (newQty <= 0) throw new Error("Quantidade inválida.");
+  const restoredOldStock = number_(oldProduct.ESTOQUE_ATUAL) + oldQty;
+  if (sameId_(sale.ID_PRODUTO, payload.productId)) {
+    if (restoredOldStock < newQty) throw new Error("Estoque insuficiente para editar a venda.");
+    oldProduct.ESTOQUE_ATUAL = restoredOldStock - newQty;
+    oldProduct.ATUALIZADO_EM = new Date();
+    upsert_("PRODUTOS", "ID", oldProduct);
+  } else {
+    if (number_(newProduct.ESTOQUE_ATUAL) < newQty) throw new Error("Estoque insuficiente no novo produto.");
+    oldProduct.ESTOQUE_ATUAL = restoredOldStock; oldProduct.ATUALIZADO_EM = new Date();
+    newProduct.ESTOQUE_ATUAL = number_(newProduct.ESTOQUE_ATUAL) - newQty; newProduct.ATUALIZADO_EM = new Date();
+    upsert_("PRODUTOS", "ID", oldProduct);
+    upsert_("PRODUTOS", "ID", newProduct);
+  }
+  const unit = number_(newProduct.PRECO_VENDA);
+  const discount = number_(payload.discount);
+  sale.ID_PRODUTO = newProduct.ID; sale.PRODUTO = newProduct.NOME; sale.QUANTIDADE = newQty; sale.VALOR_UNITARIO = unit; sale.DESCONTO = discount; sale.TOTAL = Math.max(0, unit * newQty - discount);
+  sale.CLIENTE = payload.client || ""; sale.TELEFONE = payload.phone || ""; sale.PAGAMENTO = payload.payment || "PIX"; sale.STATUS = "ATIVA"; sale.ATUALIZADO_EM = new Date();
+  upsert_("VENDAS", "ID", sale);
+  appendObject_("MOVIMENTACOES", { ID: Utilities.getUuid(), DATA: new Date(), ID_PRODUTO: newProduct.ID, PRODUTO: newProduct.NOME, TIPO: "AJUSTE_VENDA", QUANTIDADE: newQty, MOTIVO: "VENDA EDITADA " + sale.ID });
+  rebuildClients_(); clearPublicCache_();
+  return { sale: sale, products: sameId_(oldProduct.ID, newProduct.ID) ? [oldProduct] : [oldProduct, newProduct], clients: readSheet_("CLIENTES") };
+}
+
+function cancelSale_(payload) {
+  const row = findRow_("VENDAS", "ID", payload.id);
+  if (!row) throw new Error("Venda não encontrada.");
+  const sale = rowObject_("VENDAS", row);
+  if (!saleIsActive_(sale)) return { sale: sale };
+  const productRow = findRow_("PRODUTOS", "ID", sale.ID_PRODUTO);
+  let product = null;
+  if (productRow) {
+    product = rowObject_("PRODUTOS", productRow);
+    product.ESTOQUE_ATUAL = number_(product.ESTOQUE_ATUAL) + number_(sale.QUANTIDADE);
+    product.ATUALIZADO_EM = new Date();
+    upsert_("PRODUTOS", "ID", product);
+    appendObject_("MOVIMENTACOES", { ID: Utilities.getUuid(), DATA: new Date(), ID_PRODUTO: product.ID, PRODUTO: product.NOME, TIPO: "ESTORNO_VENDA", QUANTIDADE: number_(sale.QUANTIDADE), MOTIVO: "VENDA CANCELADA " + sale.ID });
+  }
+  sale.STATUS = "CANCELADA"; sale.ATUALIZADO_EM = new Date();
+  upsert_("VENDAS", "ID", sale);
+  rebuildClients_(); clearPublicCache_();
+  return { sale: sale, product: product, clients: readSheet_("CLIENTES") };
+}
+
+function rebuildClients_() {
+  const sh = sheet_("CLIENTES");
+  if (sh.getLastRow() > 1) sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).clearContent();
+  const map = {};
+  readSheet_("VENDAS").filter(saleIsActive_).forEach(function(sale) {
+    if (!sale.CLIENTE && !sale.TELEFONE) return;
+    const key = String(sale.TELEFONE || normalizeText_(sale.CLIENTE));
+    if (!map[key]) map[key] = { ID: Utilities.getUuid(), NOME: sale.CLIENTE || "CLIENTE", TELEFONE: sale.TELEFONE || "", COMPRAS: 0, TOTAL_GASTO: 0, ULTIMA_COMPRA: sale.DATA };
+    map[key].COMPRAS += 1; map[key].TOTAL_GASTO += number_(sale.TOTAL);
+    if (new Date(sale.DATA).getTime() > new Date(map[key].ULTIMA_COMPRA).getTime()) map[key].ULTIMA_COMPRA = sale.DATA;
+  });
+  Object.keys(map).forEach(function(key) { appendObject_("CLIENTES", map[key]); });
 }
 
 function upsertClient_(name, phone, total, date) {
@@ -412,8 +707,16 @@ function upsertClient_(name, phone, total, date) {
 }
 
 function saveExpense_(payload) {
-  appendObject_("DESPESAS", { ID: Utilities.getUuid(), DATA: new Date(), DESCRICAO: payload.description, CATEGORIA: payload.category || "", VALOR: number_(payload.value) });
-  return true;
+  const expense = {
+    ID: Utilities.getUuid(),
+    DATA: new Date(),
+    DESCRICAO: String(payload.description || "").trim(),
+    CATEGORIA: payload.category || "",
+    VALOR: number_(payload.value)
+  };
+  if (!expense.DESCRICAO) throw new Error("Informe a descrição da despesa.");
+  appendObject_("DESPESAS", expense);
+  return { expense: expense };
 }
 
 function saveSettings_(payload) {
@@ -421,8 +724,12 @@ function saveSettings_(payload) {
   if (phone.length < 12 || phone.length > 15) throw new Error("WhatsApp inválido. Use DDI + DDD + número.");
   setConfig_("WHATSAPP", phone);
   setConfig_("NOME_LOJA", String(payload.NOME_LOJA || "FITLYNE").trim());
-  setConfig_("SUBTITULO", String(payload.SUBTITULO || "Moda Fitness & Makeup").trim());
+  setConfig_("SUBTITULO", String(payload.SUBTITULO || "Moda Fitness, Makeup & Skincare").trim());
   if (payload.CATALOG_URL) setConfig_("CATALOG_URL", String(payload.CATALOG_URL).trim());
+  setConfig_("FRETE_FIXO", String(number_(payload.FRETE_FIXO)));
+  setConfig_("FRETE_GRATIS_ACIMA", String(number_(payload.FRETE_GRATIS_ACIMA)));
+  setConfig_("PRAZO_ENTREGA_DIAS", String(Math.max(0, number_(payload.PRAZO_ENTREGA_DIAS || 3))));
+  setConfig_("INSTAGRAM", String(payload.INSTAGRAM || "").trim());
   clearPublicCache_();
   return true;
 }
@@ -452,7 +759,10 @@ function requestProduct_(payload) {
   if (payload.consent !== true) throw new Error("É necessário autorizar o aviso pelo WhatsApp.");
   if (productId) {
     const row = findRow_("PRODUTOS", "ID", productId);
-    if (row) productName = String(rowObject_("PRODUTOS", row).NOME || productName).trim();
+    if (row) {
+      const product = rowObject_("PRODUTOS", row);
+      productName = [product.NOME, product.COR_TOM, product.TAMANHO_EXIBICAO].filter(function(value) { return String(value || "").trim(); }).join(" — ").trim() || productName;
+    }
   }
   if (!productName && !details) throw new Error("Informe o produto que procura.");
   const existing = readSheet_("SOLICITACOES").find(function(request) {
@@ -477,7 +787,7 @@ function requestProduct_(payload) {
     ATUALIZADO_EM: now
   };
   upsert_("SOLICITACOES", "ID", object);
-  return { id: object.ID, status: object.STATUS, duplicated: Boolean(existing) };
+  return { id: object.ID, status: object.STATUS, duplicated: Boolean(existing), request: object, whatsappConfigured: whatsappApiStatus_().configured };
 }
 
 function updateRequestStatus_(payload) {
@@ -490,7 +800,7 @@ function updateRequestStatus_(payload) {
   request.STATUS = status;
   request.ATUALIZADO_EM = new Date();
   upsert_("SOLICITACOES", "ID", request);
-  return { status: status };
+  return { status: status, request: request };
 }
 
 function whatsappApiStatus_() {
@@ -585,7 +895,7 @@ function notifyRequest_(payload) {
   if (!row) throw new Error("Solicitação não encontrada.");
   const request = rowObject_("SOLICITACOES", row);
   const result = notifyRequestByObject_(request);
-  return { message: "Aviso enviado para " + request.NOME + ".", messageId: result.id || "" };
+  return { message: "Aviso enviado para " + request.NOME + ".", messageId: result.id || "", request: request };
 }
 
 function notifyAllReady_() {

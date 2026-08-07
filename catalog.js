@@ -22,6 +22,8 @@ const state = {
   photos: [],
   config: {},
   filter: "",
+  sort: "CLICKS",
+  currentGroupIds: [],
   cart: JSON.parse(localStorage.getItem("fitlyneCart") || "[]")
 };
 
@@ -33,6 +35,43 @@ const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
 })[char]);
 const sameId = (left, right) => String(left ?? "").trim() === String(right ?? "").trim();
 
+function normalizedNiche(value) {
+  const text = String(value ?? "").trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (text.includes("FIT")) return "FITNESS";
+  if (text.includes("SKIN") || text.includes("PELE")) return "SKINCARE";
+  if (text.includes("MAKE") || text.includes("MAQUI")) return "MAKEUP";
+  return text;
+}
+
+function groupKey(product) {
+  const clean = (value) => String(value ?? "").trim().toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
+  return [normalizedNiche(product.NICHO), clean(product.CATEGORIA), clean(product.MARCA), clean(product.NOME)].join("|");
+}
+
+function variantsFor(product) {
+  const key = groupKey(product);
+  return state.products.filter((entry) => groupKey(entry) === key);
+}
+
+function fireAndForget(action, payload) {
+  fetch(FITLYNE_API_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ action, payload, public: true }), redirect: "follow", keepalive: true }).catch(() => {});
+}
+
+function shippingFor(subtotal) {
+  const fixed = Number(state.config.FRETE_FIXO || 0);
+  const freeAbove = Number(state.config.FRETE_GRATIS_ACIMA || 0);
+  if (freeAbove > 0 && subtotal >= freeAbove) return 0;
+  return Math.max(0, fixed);
+}
+
+function deliveryText() {
+  const days = Math.max(0, Number(state.config.PRAZO_ENTREGA_DIAS || 0));
+  if (!days) return "Prazo de entrega a combinar";
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return `Entrega estimada em ${days} dia${days === 1 ? "" : "s"} · até ${date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}`;
+}
+
 function toast(message) {
   const element = $("#toast");
   element.textContent = message;
@@ -41,14 +80,14 @@ function toast(message) {
   window.__fitlyneToast = setTimeout(() => { element.style.display = "none"; }, 2800);
 }
 
-async function publicApi(action, payload = {}) {
+async function publicApi(action, payload = {}, allowFallback = true) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 25000);
   try {
     const response = await fetch(FITLYNE_API_URL, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action, payload }),
+      body: JSON.stringify({ action, payload, public: true }),
       redirect: "follow",
       cache: "no-store",
       signal: controller.signal
@@ -57,7 +96,13 @@ async function publicApi(action, payload = {}) {
     let output;
     try { output = JSON.parse(raw); }
     catch (error) { throw new Error(`A API retornou uma resposta inválida (HTTP ${response.status}).`); }
-    if (!response.ok || !output.ok) throw new Error(output.error || "Não foi possível concluir a solicitação.");
+    if (!response.ok || !output.ok) {
+      const message = output.error || "Não foi possível concluir a solicitação.";
+      if (allowFallback && action === "requestProduct" && /sess[aã]o inv[aá]lida/i.test(message)) {
+        return publicApi("publicRequestProduct", payload, false);
+      }
+      throw new Error(message);
+    }
     return output.data;
   } catch (error) {
     if (error.name === "AbortError") throw new Error("A operação demorou demais. Tente novamente.");
@@ -119,7 +164,7 @@ function validPhone(value) {
 
 function applyData(data) {
   if (!data || !Array.isArray(data.products) || !Array.isArray(data.photos)) return;
-  state.products = data.products.map((product) => ({ ...product, ID: String(product.ID ?? "").trim() }));
+  state.products = data.products.map((product) => ({ ...product, ID: String(product.ID ?? "").trim(), NICHO: normalizedNiche(product.NICHO), CLIQUES: Number(product.CLIQUES || 0), PEDIDOS: Number(product.PEDIDOS || 0) }));
   state.photos = data.photos.map((photo) => ({ ...photo, ID_PRODUTO: String(photo.ID_PRODUTO ?? "").trim() }));
   state.config = data.config || {};
   $("#storeName").textContent = state.config.NOME_LOJA || C.STORE_NAME;
@@ -194,27 +239,38 @@ function saveCart() {
 
 function renderCatalog() {
   const query = $("#searchInput").value.toLowerCase();
-  const products = state.products.filter((product) =>
-    (!state.filter || product.NICHO === state.filter) &&
-    (`${product.NOME} ${product.CATEGORIA} ${product.COR_TOM}`).toLowerCase().includes(query)
+  const filtered = state.products.filter((product) =>
+    (!state.filter || normalizedNiche(product.NICHO) === state.filter) &&
+    (`${product.NOME} ${product.CATEGORIA} ${product.COR_TOM} ${product.SKU || ""}`).toLowerCase().includes(query)
   );
-  $("#catalogGrid").innerHTML = products.map((product) => {
-    const status = statusInfo(product);
-    const available = isAvailable(product);
+  const groups = new Map();
+  filtered.forEach((product) => { const key = groupKey(product); if (!groups.has(key)) groups.set(key, []); groups.get(key).push(product); });
+  let entries = [...groups.values()].map((variants) => {
+    const available = variants.find(isAvailable) || variants[0];
+    return { variants, product: available, clicks: variants.reduce((sum, p) => sum + Number(p.CLIQUES || 0), 0), orders: variants.reduce((sum, p) => sum + Number(p.PEDIDOS || 0), 0), minPrice: Math.min(...variants.map((p) => Number(p.PRECO_VENDA || 0))) };
+  });
+  const sort = state.sort || "CLICKS";
+  entries.sort((a, b) => sort === "ORDERS" ? b.orders - a.orders : sort === "PRICE_ASC" ? a.minPrice - b.minPrice : sort === "PRICE_DESC" ? b.minPrice - a.minPrice : b.clicks - a.clicks);
+  $("#catalogGrid").innerHTML = entries.map(({ product, variants, minPrice }) => {
+    const status = variants.some(isAvailable) ? { label: "Disponível", className: "available" } : statusInfo(product);
+    const available = variants.some(isAvailable);
     const photo = productPhotoData(product.ID);
+    const variationNames = [...new Set(variants.map((item) => String(item.COR_TOM || item.TAMANHO_EXIBICAO || "Opção").trim()).filter(Boolean))];
+    const variation = variants.length > 1 ? `<span class="variation-pill">${variants.length} opções</span>` : (product.COR_TOM ? `<span class="variation-pill">${esc(product.COR_TOM)}</span>` : "");
+    const priceLabel = variants.length > 1 && variants.some((item) => Number(item.PRECO_VENDA || 0) !== minPrice) ? `A partir de ${money(minPrice)}` : money(product.PRECO_VENDA);
     return `<article class="card ${available ? "" : "unavailable-card"}">
       <div class="image-wrap">
         <img loading="lazy" decoding="async" src="${esc(photo.src)}" data-fallback-src="${esc(photo.fallback)}" alt="${esc(product.NOME)}">
         <span class="availability-badge ${status.className}">${status.label}</span>
       </div>
       <div class="body">
-        <span class="badge">${esc(product.NICHO)}</span>
+        <div class="card-meta"><span class="badge">${esc(normalizedNiche(product.NICHO))}</span>${variation}</div>
         <h3>${esc(product.NOME)}</h3>
-        <p class="muted">${esc(product.TAMANHO_EXIBICAO || "")}</p>
-        <p class="price">${money(product.PRECO_VENDA)}</p>
+        ${variationNames.length > 1 ? `<p class="muted variation-list">${esc(variationNames.slice(0,4).join(" · "))}${variationNames.length > 4 ? " …" : ""}</p>` : `<p class="product-sku">${esc(product.SKU || "")}</p>`}
+        <p class="price">${priceLabel}</p>
         <div class="product-actions">
-          <button onclick="openProduct('${product.ID}')">Ver produto</button>
-          <button class="add-cart ${available ? "" : "request-stock"}" ${available ? `onclick="addToCart('${product.ID}')"` : `onclick="openRestockRequest('${product.ID}')"`}>${available ? "Adicionar ao carrinho" : "Avise-me quando chegar"}</button>
+          <button onclick="openProduct('${product.ID}')">${variants.length > 1 ? "Escolher opção" : "Ver produto"}</button>
+          ${variants.length > 1 ? `<button class="add-cart" onclick="openProduct('${product.ID}')">Ver variações</button>` : `<button class="add-cart ${available ? "" : "request-stock"}" ${available ? `onclick="addToCart('${product.ID}')"` : `onclick="openRestockRequest('${product.ID}')"`}>${available ? "Adicionar ao carrinho" : "Avise-me quando chegar"}</button>`}
         </div>
       </div>
     </article>`;
@@ -224,6 +280,22 @@ function renderCatalog() {
 window.openProduct = function openProduct(productId) {
   const product = state.products.find((entry) => sameId(entry.ID, productId));
   if (!product) return;
+  const group = variantsFor(product);
+  state.currentGroupIds = group.map((entry) => entry.ID);
+  renderProductDialog(product.ID, group);
+  $("#productDialog").showModal();
+};
+
+window.selectProductVariant = function selectProductVariant(productId) {
+  const group = state.currentGroupIds.map((id) => state.products.find((entry) => sameId(entry.ID, id))).filter(Boolean);
+  renderProductDialog(productId, group.length ? group : variantsFor(state.products.find((entry) => sameId(entry.ID, productId)) || {}));
+};
+
+function renderProductDialog(productId, group) {
+  const product = state.products.find((entry) => sameId(entry.ID, productId));
+  if (!product) return;
+  product.CLIQUES = Number(product.CLIQUES || 0) + 1;
+  fireAndForget("trackClick", { productId });
   const photos = productPhotos(productId);
   const status = statusInfo(product);
   const available = isAvailable(product);
@@ -232,18 +304,20 @@ window.openProduct = function openProduct(productId) {
     const src = String(photo.URL_FEED || photo.URL_CATALOGO || "").trim() || original;
     return `<img loading="lazy" decoding="async" src="${esc(src)}" data-fallback-src="${esc(original)}" alt="${esc(product.NOME)}">`;
   }).join("");
+  const options = group.length > 1 ? `<div class="variant-picker"><span>Escolha a opção</span><div>${group.map((variant) => { const label = variant.COR_TOM || variant.TAMANHO_EXIBICAO || variant.SKU; return `<button type="button" class="variant-choice ${sameId(variant.ID, product.ID) ? "active" : ""}" onclick="selectProductVariant('${variant.ID}')">${esc(label)}${isAvailable(variant) ? "" : " · esgotado"}</button>`; }).join("")}</div></div>` : "";
   $("#dialogContent").innerHTML = `
     <div class="gallery">${gallery}</div>
     <div class="dialog-body">
-      <div class="dialog-badges"><span class="badge">${esc(product.NICHO)}</span><span class="availability-badge ${status.className}">${status.label}</span></div>
+      <div class="dialog-badges"><span class="badge">${esc(normalizedNiche(product.NICHO))}</span><span class="availability-badge ${status.className}">${status.label}</span></div>
       <h2>${esc(product.NOME)}</h2>
+      ${options}
       <p>${esc(product.DESCRICAO || "")}</p>
-      <p><b>${esc(product.TAMANHO_EXIBICAO || "")}</b>${product.COR_TOM ? " · " + esc(product.COR_TOM) : ""}</p>
+      <p class="product-sku">${esc(product.SKU || "")}</p>
+      <p>${product.COR_TOM ? `<b>Variação:</b> ${esc(product.COR_TOM)}` : ""}${product.TAMANHO_EXIBICAO ? ` · ${esc(product.TAMANHO_EXIBICAO)}` : ""}</p>
       <h2>${money(product.PRECO_VENDA)}</h2>
       <button class="dialog-add-cart ${available ? "" : "request-stock"}" ${available ? `onclick="addToCart('${product.ID}', true)"` : `onclick="openRestockRequest('${product.ID}', true)"`}>${available ? "Adicionar ao carrinho" : "Avise-me quando chegar"}</button>
     </div>`;
-  $("#productDialog").showModal();
-};
+}
 
 
 function rememberCustomer(name, phone) {
@@ -302,7 +376,7 @@ async function submitRequest(event) {
   button.disabled = true;
   button.textContent = "Registrando...";
   try {
-    await publicApi("requestProduct", {
+    const result = await publicApi("requestProduct", {
       type: product ? "REPOSICAO" : "PRODUTO_NAO_CADASTRADO",
       productId: product?.ID || "",
       productName: product?.NOME || description,
@@ -313,7 +387,10 @@ async function submitRequest(event) {
     });
     rememberCustomer(name, phone);
     $("#requestDialog").close();
-    toast(product ? "Pronto! Avisaremos pelo WhatsApp quando chegar." : "Solicitação registrada. A FITLYNE recebeu seu pedido.");
+    const auto = Boolean(result?.whatsappConfigured);
+    toast(product
+      ? (auto ? "Solicitação registrada. O aviso poderá ser enviado automaticamente quando chegar." : "Solicitação registrada. Ela já aparece na gestão da FITLYNE.")
+      : "Solicitação registrada. A FITLYNE recebeu seu pedido.");
   } catch (error) { toast(error.message); }
   finally { button.disabled = false; button.textContent = "Registrar solicitação"; }
 }
@@ -366,8 +443,13 @@ function renderCart() {
           <div class="cart-line"><div class="qty-control"><button onclick="changeCartQuantity('${product.ID}', -1)" aria-label="Diminuir">−</button><span>${quantity}</span><button onclick="changeCartQuantity('${product.ID}', 1)" aria-label="Aumentar">+</button></div><button class="remove-item" onclick="removeCartItem('${product.ID}')">Remover</button></div>
         </div></article>`).join("")
     : '<div class="cart-empty">Seu carrinho está vazio.</div>';
-  const total = cartProducts.reduce((sum, item) => sum + Number(item.product.PRECO_VENDA || 0) * Number(item.quantity || 0), 0);
+  const subtotal = cartProducts.reduce((sum, item) => sum + Number(item.product.PRECO_VENDA || 0) * Number(item.quantity || 0), 0);
+  const shipping = shippingFor(subtotal);
+  const total = subtotal + shipping;
+  $("#cartSubtotal").textContent = money(subtotal);
+  $("#cartShipping").textContent = shipping > 0 ? money(shipping) : (subtotal > 0 ? "Grátis" : money(0));
   $("#cartTotal").textContent = money(total);
+  $("#cartDelivery").textContent = cartProducts.length ? deliveryText() : "";
   $("#checkoutWhatsApp").disabled = !cartProducts.length;
 }
 
@@ -398,15 +480,19 @@ function checkoutWhatsApp() {
       `   Subtotal: ${money(subtotal)}`
     ].filter(Boolean).join("\n");
   });
-  const total = cartProducts.reduce((sum, item) => sum + Number(item.product.PRECO_VENDA || 0) * Number(item.quantity || 0), 0);
+  const subtotal = cartProducts.reduce((sum, item) => sum + Number(item.product.PRECO_VENDA || 0) * Number(item.quantity || 0), 0);
+  const shipping = shippingFor(subtotal);
+  const total = subtotal + shipping;
   const note = $("#cartNote").value.trim();
   const message = [
     `Olá! Gostaria de solicitar estes produtos da ${state.config.NOME_LOJA || C.STORE_NAME}:`,
-    "", ...lines, "", `Total estimado: ${money(total)}`,
+    "", ...lines, "", `Subtotal: ${money(subtotal)}`, `Frete: ${shipping > 0 ? money(shipping) : "Grátis"}`, `Total estimado: ${money(total)}`, `Prazo: ${deliveryText()}`,
     note ? `Observação: ${note}` : "", "",
     "Pode confirmar a disponibilidade e as formas de pagamento?"
   ].filter(Boolean).join("\n");
   const url = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+  cartProducts.forEach(({ product, quantity }) => { product.PEDIDOS = Number(product.PEDIDOS || 0) + Number(quantity || 1); });
+  fireAndForget("trackOrderIntent", { items: cartProducts.map(({ product, quantity }) => ({ productId: product.ID, quantity })) });
   if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
     window.location.href = url;
   } else {
@@ -422,6 +508,7 @@ $$('[data-filter]').forEach((button) => button.onclick = () => {
   state.filter = button.dataset.filter;
   renderCatalog();
 });
+$("#sortSelect").onchange = (event) => { state.sort = event.target.value; renderCatalog(); };
 $("#closeDialog").onclick = () => $("#productDialog").close();
 $("#openGeneralRequest").onclick = () => openRequestDialog();
 $("#closeRequestDialog").onclick = () => $("#requestDialog").close();
