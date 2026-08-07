@@ -7,7 +7,7 @@
  */
 window.FITLYNE_CONFIG = Object.freeze({
   BUILD: "2026-08-07-loja-pro-v6-arquivo-estoque",
-  API_URL: "https://script.google.com/macros/s/AKfycbxpPyKW0ULMETX3A2IBj21iSWfBL71bV7TZ-ayLtN-9a7HJSN6u7dyx3sMgh4kn3q6RZg/exec",
+  API_URL: "https://script.google.com/macros/s/AKfycbz_QzHztv3lqIMz7zW9euM7VumlJxWhDgB5CadvKILlFM75m7iS6P9sYbD9Yojfqzs8YQ/exec",
   CLOUDINARY_CLOUD_NAME: "v9gfcyqm",
   CLOUDINARY_UPLOAD_PRESET: "fitlyne_upload",
   CLOUDINARY_WATERMARK_PUBLIC_ID: "",
